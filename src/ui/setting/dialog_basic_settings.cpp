@@ -450,8 +450,8 @@ void DialogBasicSettings::on_backup_create_clicked() {
     QString filePath = QFileDialog::getSaveFileName(
         this,
         tr("Create Backup"),
-        QDir::homePath() + "/Throne-backup.thrbackup",
-        tr("Throne Backup (*.thrbackup)")
+        QDir::homePath() + "/TaliabuVPN2026v2-backup.thrbackup",
+        tr("TaliabuVPN2026v2 Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 
@@ -539,7 +539,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
         this,
         tr("Restore Backup"),
         QDir::homePath(),
-        tr("Throne Backup (*.thrbackup)")
+        tr("TaliabuVPN2026v2 Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 

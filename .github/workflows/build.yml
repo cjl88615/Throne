@@ -1,4 +1,4 @@
-name: Throne build matrix
+name: TaliabuVPN2026v2 build matrix
 on:
   workflow_dispatch:
     inputs:
@@ -54,7 +54,7 @@ jobs:
         uses: actions/cache@v4.2.3
         with:
           path: artifacts.tgz
-          key: CommonCache-${{ matrix.cross_os }}-${{ matrix.cross_arch }}-${{ hashFiles('script/build_go.sh', 'core/*') }}-${{ matrix.go_version }}
+          key: CommonCache-${{ matrix.cross_os }}-${{ matrix.cross_arch }}-${{ hashFiles('script/build_go.sh', 'core/**') }}-${{ matrix.go_version }}
       - name: Install Golang
         if: steps.cache-common.outputs.cache-hit != 'true'
         uses: actions/setup-go@v5.5.0
@@ -110,7 +110,7 @@ jobs:
       - name: Uploading Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: Throne-${{ github.sha }}-Common-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
+          name: TaliabuVPN2026v2-${{ github.sha }}-Common-${{ matrix.cross_os }}-${{ matrix.cross_arch }}
           path: artifacts.tgz
   build-cpp:
     permissions:
@@ -256,7 +256,7 @@ jobs:
       - name: Uploading Artifact
         uses: actions/upload-artifact@v4.6.2
         with:
-          name: Throne-${{ github.sha }}-${{ matrix.dest_suffix }}
+          name: TaliabuVPN2026v2-${{ github.sha }}-${{ matrix.dest_suffix }}
           path: artifacts.tgz
   publish:
     name: Pack & Publish Release
@@ -282,7 +282,7 @@ jobs:
           sudo apt install nsis
           cp ./script/windows_installer.nsi .
           makensis windows_installer.nsi
-          cp ThroneSetup.exe deployment/Throne-${{ github.event.inputs.tag }}-windows-universal-installer.exe
+          cp TaliabuVPN2026v2Setup.exe deployment/TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows-universal-installer.exe
           ####
           cd deployment
           mkdir debug
@@ -313,25 +313,25 @@ jobs:
           zip -9 -r Throne-${{ github.event.inputs.tag }}-linux-arm64.zip Throne
           rm -rf Throne
           ####
-          mv windows-amd64 Throne
-          mv Throne/Throne.pdb debug/Throne-${{ github.event.inputs.tag }}-windows-amd64.pdb
-          zip -9 -r Throne-${{ github.event.inputs.tag }}-windows64.zip Throne
-          rm -rf Throne
+          mv windows-amd64 TaliabuVPN2026v2
+          mv TaliabuVPN2026v2/TaliabuVPN2026v2.pdb debug/TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows-amd64.pdb
+          zip -9 -r TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows64.zip TaliabuVPN2026v2
+          rm -rf TaliabuVPN2026v2
           ####
-          mv windows-arm64 Throne
-          mv Throne/Throne.pdb debug/Throne-${{ github.event.inputs.tag }}-windows-arm64.pdb
-          zip -9 -r Throne-${{ github.event.inputs.tag }}-windows-arm64.zip Throne
-          rm -rf Throne
+          mv windows-arm64 TaliabuVPN2026v2
+          mv TaliabuVPN2026v2/TaliabuVPN2026v2.pdb debug/TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows-arm64.pdb
+          zip -9 -r TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows-arm64.zip TaliabuVPN2026v2
+          rm -rf TaliabuVPN2026v2
           ####
-          mv windowslegacy-386 Throne
-          mv Throne/Throne.pdb debug/Throne-${{ github.event.inputs.tag }}-windowslegacy-386.pdb
-          zip -9 -r Throne-${{ github.event.inputs.tag }}-windows32.zip Throne
-          rm -rf Throne
+          mv windowslegacy-386 TaliabuVPN2026v2
+          mv TaliabuVPN2026v2/TaliabuVPN2026v2.pdb debug/TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windowslegacy-386.pdb
+          zip -9 -r TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windows32.zip TaliabuVPN2026v2
+          rm -rf TaliabuVPN2026v2
           ####
-          mv windowslegacy-amd64 Throne
-          mv Throne/Throne.pdb debug/Throne-${{ github.event.inputs.tag }}-windowslegacy-amd64.pdb
-          zip -9 -r Throne-${{ github.event.inputs.tag }}-windowslegacy64.zip Throne
-          rm -rf Throne
+          mv windowslegacy-amd64 TaliabuVPN2026v2
+          mv TaliabuVPN2026v2/TaliabuVPN2026v2.pdb debug/TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windowslegacy-amd64.pdb
+          zip -9 -r TaliabuVPN2026v2-${{ github.event.inputs.tag }}-windowslegacy64.zip TaliabuVPN2026v2
+          rm -rf TaliabuVPN2026v2
           ####
           mkdir Throne
           mv darwin-arm64/Throne.app Throne/Throne.app
