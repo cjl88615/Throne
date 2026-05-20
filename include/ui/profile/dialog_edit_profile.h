@@ -1,12 +1,10 @@
-#ifndef DIALOG_EDIT_PROFILE_H
-#define DIALOG_EDIT_PROFILE_H
-
+#pragma once
 #include <QDialog>
-#include "include/dataStore/Database.hpp"
 #include "profile_editor.h"
 
 #include "include/ui/utils/FloatCheckBox.h"
 #include "ui_dialog_edit_profile.h"
+#include "include/database/entities/Profile.h"
 
 namespace Ui {
     class DialogEditProfile;
@@ -42,7 +40,7 @@ private:
     QString type;
     int groupId;
     bool newEnt = false;
-    std::shared_ptr<Configs::ProxyEntity> ent;
+    std::shared_ptr<Configs::Profile> ent;
 
     QString network_title_base;
 
@@ -53,9 +51,11 @@ private:
 
     void typeSelected(const QString &newType);
 
+    void updateXrayCommons(QString network);
+
+    bool validateHeaders();
+
     bool onEnd();
 
     void editor_cache_updated_impl();
 };
-
-#endif // DIALOG_EDIT_PROFILE_H

@@ -1,6 +1,5 @@
 #include "include/global/Utils.hpp"
 
-#include "3rdparty/base64.h"
 #include "3rdparty/QThreadCreateThread.hpp"
 
 #include <random>
@@ -42,20 +41,22 @@ QStringList SplitLinesSkipSharp(const QString &_string, int maxLine) {
 }
 
 QByteArray DecodeB64IfValid(const QString &input, QByteArray::Base64Options options) {
-    Qt515Base64::Base64Options newOptions = Qt515Base64::Base64Option::AbortOnBase64DecodingErrors;
-    if (options.testFlag(QByteArray::Base64UrlEncoding)) newOptions |= Qt515Base64::Base64Option::Base64UrlEncoding;
-    if (options.testFlag(QByteArray::OmitTrailingEquals)) newOptions |= Qt515Base64::Base64Option::OmitTrailingEquals;
-    auto result = Qt515Base64::QByteArray_fromBase64Encoding(input.toUtf8(), newOptions);
+    QByteArray::Base64Options newOptions = options | QByteArray::Base64Option::AbortOnBase64DecodingErrors;
+    auto result = QByteArray::fromBase64Encoding(input.toUtf8(), newOptions);
     if (result) {
         return result.decoded;
     }
     return {};
 }
 
-QStringList SplitAndTrim(QString raw, QString separator) {
+QStringList SplitAndTrim(const QString& raw, const QString& separator, bool keepEmpty) {
     QStringList result;
     auto spl = raw.split(separator);
-    for (auto str : spl) result << str.trimmed();
+    for (const auto& str : spl) {
+        auto trimmed = str.trimmed();
+        if (!keepEmpty && trimmed.isEmpty()) continue;
+        result << trimmed;
+    }
     return result;
 }
 
@@ -189,6 +190,20 @@ int MkPort() {
     return port;
 }
 
+QList<int> MkManyPorts(int num) {
+    QList<int> res;
+    QList<QTcpServer*> servers;
+    for (int i=0;i<num;i++) {
+        QTcpServer s;
+        s.listen();
+        servers.append(&s);
+        res.append(s.serverPort());
+    }
+    for (const auto s: servers) s->close();
+    servers.clear();
+    return res;
+}
+
 QString ReadableSize(const qint64 &size) {
     double sizeAsDouble = size;
     static QStringList measures;
@@ -278,8 +293,12 @@ void HideWindow(QWidget *w) {
 
 void runOnUiThread(const std::function<void()> &callback, bool wait) {
     // any thread
-    auto *timer = new QTimer();
     auto thread = mainwindow->thread();
+    if (thread == QThread::currentThread()) {
+        callback();
+        return;
+    }
+    auto *timer = new QTimer();
     timer->moveToThread(thread);
     timer->setSingleShot(true);
 

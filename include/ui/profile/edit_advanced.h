@@ -1,8 +1,9 @@
 #pragma once
 
 #include <QDialog>
+#include <QStringList>
 #include "ui_edit_advanced.h"
-#include "include/dataStore/ProxyEntity.hpp"
+#include "include/database/entities/Profile.h"
 
 namespace Ui {
 class EditAdvanced;
@@ -13,7 +14,7 @@ class EditAdvanced : public QDialog
     Q_OBJECT
 
 public:
-    EditAdvanced(QWidget *parent, const std::shared_ptr<Configs::ProxyEntity> &_ent);
+    EditAdvanced(QWidget *parent, const std::shared_ptr<Configs::Profile> &_ent);
 
     ~EditAdvanced() override;
 
@@ -31,7 +32,11 @@ private slots:
 
 private:
     Ui::EditAdvanced *ui;
-    std::shared_ptr<Configs::ProxyEntity> ent;
+    std::shared_ptr<Configs::Profile> ent;
+
+    QStringList m_systemInterfaces;
+    QStringList m_systemIpv4Addresses;
+    QStringList m_systemIpv6Addresses;
 
     struct {
         QStringList echConfig;

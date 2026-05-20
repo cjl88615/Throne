@@ -1,26 +1,17 @@
 #pragma once
 #include <QJsonArray>
 #include <QJsonObject>
-#include <include/dataStore/ProxyEntity.hpp>
-#include <include/stats/traffic/TrafficData.hpp>
+
+#include "include/database/entities/Profile.h"
 
 namespace Configs
 {
-    enum OSType
-    {
-        Unknown = 0,
-        Linux = 1,
-        Windows = 2,
-        Darwin = 3,
-    };
-
     class ExtraCoreData
     {
         public:
         QString path;
         QString args;
         QString config;
-        QString configDir;
         bool noLog;
     };
 
@@ -33,6 +24,12 @@ namespace Configs
         QJsonArray directSuffixes;
         QJsonArray directKeywords;
         QJsonArray directRegexes;
+        bool needProxyDnsRules = false;
+        QJsonArray proxyDomains;
+        QJsonArray proxyRuleSets;
+        QJsonArray proxySuffixes;
+        QJsonArray proxyKeywords;
+        QJsonArray proxyRegexes;
     };
 
     class HijackDeps
@@ -55,9 +52,12 @@ namespace Configs
     {
         public:
         int defaultOutboundID;
-        QList<int> neededOutbounds;
+        QList<int> neededOutbounds;       // kept for compatibility but no longer consumed
         QStringList neededRuleSets;
         std::map<int, QString> outboundMap;
+        // Each entry is one routing outbound group.
+        // Single profile -> [[id]]. Chain -> [[outerHop, ..., innerHop]] (reversed, matching existing chain build order).
+        QList<QList<int>> routeOutboundGroups;
     };
 
     class BuildPrerequisities
@@ -72,12 +72,20 @@ namespace Configs
     class BuildConfigResult {
     public:
         QString error;
+        bool isChained = false;
         QJsonObject coreConfig;
+        QString tunIPv4CIDR;
         bool isXrayNeeded = false;
         QJsonObject xrayConfig;
         std::shared_ptr<ExtraCoreData> extraCoreData = std::make_shared<ExtraCoreData>();
 
-        QList<std::shared_ptr<Stats::TrafficData>> outboundStats;
+        QList<std::pair<std::shared_ptr<Profile>, QString>> outboundEntsForTraffic;
+    };
+
+    struct coreBridgeConfig {
+        bool needed = false;
+        int port = -1;
+        QString auth;
     };
 
     class BuildSingBoxConfigContext
@@ -87,27 +95,33 @@ namespace Configs
         bool forExport = false;
         bool tunEnabled = false;
         bool isResolvedUsed = false;
-        std::shared_ptr<ProxyEntity> ent = std::make_shared<ProxyEntity>(nullptr, nullptr, nullptr);
+        bool singToXrayTransitioned = false;
+        bool xrayToSingTransitioned = false;
+        std::shared_ptr<Profile> ent = std::make_shared<Profile>(nullptr, nullptr);
         std::shared_ptr<BuildPrerequisities> buildPrerequisities = std::make_shared<BuildPrerequisities>();
-        OSType os;
+        osType os;
 
         QString error;
         QStringList warnings;
         QJsonArray outbounds;
         QJsonArray endpoints;
-        QList<std::pair<int, QJsonObject>> xrayOutbounds; // (inbound port, object)
+        QJsonArray xrayOutbounds;
+        QList<QString> xrayIngressTags;
+        QList<QString> singIngressTags;
+        QList<coreBridgeConfig> singToXrayBridges;
+        QList<coreBridgeConfig> xrayToSingBridges;
         std::shared_ptr<BuildConfigResult> buildConfigResult = std::make_shared<BuildConfigResult>();
     };
 
     inline QString get_jsdelivr_link(QString link)
     {
-        if(dataStore->routing->ruleset_mirror == Mirrors::GITHUB)
+        if(Configs::dataManager->settingsRepo->ruleset_mirror == Mirrors::GITHUB)
             return link;
         if(auto url = QUrl(link); url.isValid() && url.host() == "raw.githubusercontent.com")
         {
             QStringList list = url.path().split('/');
             QString result;
-            switch(dataStore->routing->ruleset_mirror) {
+            switch(Configs::dataManager->settingsRepo->ruleset_mirror) {
             case Mirrors::GCORE: result = "https://gcore.jsdelivr.net/gh"; break;
             case Mirrors::QUANTIL: result = "https://quantil.jsdelivr.net/gh"; break;
             case Mirrors::FASTLY: result = "https://fastly.jsdelivr.net/gh"; break;
@@ -132,6 +146,9 @@ namespace Configs
         return link;
     }
 
+    constexpr int warpProfileID = -2408;
+    std::shared_ptr<Profile> getWarpProfile();
+
     void CalculatePrerequisities(std::shared_ptr<BuildSingBoxConfigContext> &ctx);
 
     void buildLogSections(std::shared_ptr<BuildSingBoxConfigContext> &ctx);
@@ -152,7 +169,7 @@ namespace Configs
 
     void buildXrayConfig(std::shared_ptr<BuildSingBoxConfigContext> &ctx);
 
-    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<ProxyEntity> &ent);
+    std::shared_ptr<BuildConfigResult> BuildSingBoxConfig(const std::shared_ptr<Profile> &ent);
 
     class BuildTestConfigResult {
     public:
@@ -165,7 +182,7 @@ namespace Configs
         QStringList outboundTags;
     };
 
-    bool IsValid(const std::shared_ptr<ProxyEntity> &ent);
+    bool IsValid(const std::shared_ptr<Profile> &ent);
 
-    std::shared_ptr<BuildTestConfigResult> BuildTestConfig(const QList<std::shared_ptr<ProxyEntity> > &profiles);
+    std::shared_ptr<BuildTestConfigResult> BuildTestConfig(const QList<std::shared_ptr<Profile> > &profiles);
 }

@@ -1,15 +1,16 @@
-#include "include/dataStore/ProfileFilter.hpp"
-#include "include/configs/proxy/includes.h"
+#include "include/database/entities/Profile.h"
 #include "include/global/HTTPRequestHelper.hpp"
-#include "include/api/RPC.h"
 
 #include "include/configs/sub/GroupUpdater.hpp"
+#include "include/configs/sub/clash.hpp"
 
 #include <QInputDialog>
 #include <QUrlQuery>
 #include <QJsonDocument>
 
 #include "include/configs/common/utils.h"
+#include "include/database/GroupsRepo.h"
+#include "include/database/ProfilesRepo.h"
 
 namespace Subscription {
 
@@ -50,21 +51,144 @@ namespace Subscription {
         return res;
     }
 
-    void RawUpdater::update(const QString &str, bool needParse = true) {
-        // Base64 encoded subscription
-        if (auto str2 = DecodeB64IfValid(str); !str2.isEmpty()) {
-            update(str2);
-            return;
+    SingBoxSubType getSingBoxSubType(const QJsonDocument &doc) {
+        if (doc.isObject()) {
+            auto obj = doc.object();
+            bool hasInbound = obj.contains("inbounds");
+            bool hasOutbound = obj.contains("outbounds") || obj.contains("endpoints");
+            // if (hasInbound && hasOutbound) return SingBoxSubType::fullConfig;
+            if (hasOutbound) return SingBoxSubType::outboundInJson;
+            if (obj.contains("type")) return SingBoxSubType::outboundObject;
+            return SingBoxSubType::invalid;
         }
+        if (doc.isArray() && !doc.array().empty()) {
+            auto arr = doc.array();
+            auto firstRaw = arr.first();
+            if (firstRaw.isObject()) {
+                auto obj = firstRaw.toObject();
+                if (obj.contains("type")) return SingBoxSubType::outboundJsonArray;
+            }
+            return SingBoxSubType::invalid;
+        }
+        return SingBoxSubType::invalid;
+    }
+
+    // Xray uses "protocol" instead of sing-box's "type" field on outbounds, so
+    // we can disambiguate by inspecting individual outbound objects rather than
+    // the wrapper.
+    XraySubType getXraySubType(const QJsonDocument &doc) {
+        if (doc.isObject()) {
+            auto obj = doc.object();
+            if (obj.contains("outbounds")) {
+                for (const auto &item : obj["outbounds"].toArray()) {
+                    if (item.isObject() && item.toObject().contains("protocol")) {
+                        return XraySubType::outboundInJson;
+                    }
+                }
+            }
+            if (obj.contains("protocol")) return XraySubType::outboundObject;
+            return XraySubType::invalid;
+        }
+        if (doc.isArray() && !doc.array().empty()) {
+            auto first = doc.array().first();
+            if (first.isObject() && first.toObject().contains("protocol")) {
+                return XraySubType::outboundJsonArray;
+            }
+        }
+        return XraySubType::invalid;
+    }
+
+    // Convert a real Xray VLESS outbound (settings.vnext[0].address etc.) into
+    // the simplified shape Throne's xrayVless::ParseFromJson expects. Returns
+    // an empty object if the input doesn't have the expected structure.
+    QJsonObject normalizeXrayVlessForParse(const QJsonObject &out) {
+        if (out["protocol"].toString() != "vless") return {};
+        auto settings = out["settings"].toObject();
+        // Already in simplified form.
+        if (settings.contains("address") && !settings.contains("vnext")) return out;
+        auto vnext = settings["vnext"].toArray();
+        if (vnext.isEmpty()) return {};
+        auto first = vnext.first().toObject();
+        if (first.isEmpty()) return {};
+        auto users = first["users"].toArray();
+        if (users.isEmpty()) return {};
+        auto user = users.first().toObject();
+        QJsonObject simpleSettings;
+        simpleSettings["address"] = first["address"];
+        simpleSettings["port"] = first["port"];
+        simpleSettings["id"] = user["id"];
+        simpleSettings["encryption"] = user.contains("encryption") ? user["encryption"] : QJsonValue("none");
+        simpleSettings["flow"] = user["flow"];
+        QJsonObject normalized = out;
+        normalized["settings"] = simpleSettings;
+        return normalized;
+    }
+
+    std::shared_ptr<Configs::Profile> makeProfileForXrayOutbound(const QJsonObject &out) {
+        if (out.isEmpty()) return nullptr;
+        auto protocol = out["protocol"].toString();
+        // System protocols don't make sense as user profiles.
+        if (protocol == "freedom" || protocol == "blackhole" || protocol == "dns" || protocol == "loopback") {
+            return nullptr;
+        }
+        std::shared_ptr<Configs::Profile> ent;
+        if (protocol == "vless") {
+            if (auto normalized = normalizeXrayVlessForParse(out); !normalized.isEmpty()) {
+                ent = Configs::ProfilesRepo::NewProfile("xrayvless");
+                if (ent->XrayVLESS()->ParseFromJson(normalized)) return ent;
+            }
+        }
+        ent = Configs::ProfilesRepo::NewProfile("custom");
+        ent->Custom()->type = Configs::Custom::CustomXrayOutbound;
+        ent->Custom()->config = QJsonObject2QString(out, false);
+        if (auto tag = out["tag"].toString(); !tag.isEmpty()) ent->Custom()->name = tag;
+        return ent;
+    }
+
+    void RawUpdater::update(const QString &str, bool needParse, bool isBase64Decoded) {
+        // Base64 encoded subscription
+        if (!isBase64Decoded) {
+            if (auto str2 = DecodeB64IfValid(str); !str2.isEmpty()) {
+                update(str2, needParse, true);
+                return;
+            }
+        }
+
+        std::shared_ptr<Configs::Profile> ent;
 
         // Json
         QJsonParseError error;
-        QJsonDocument::fromJson(str.toUtf8(), &error);
-        if (error.error == error.NoError) {
+        auto doc = QJsonDocument::fromJson(str.toUtf8(), &error);
+        if (error.error == QJsonParseError::NoError) {
+            // Xray (checked first since its outbounds are tagged with
+            // "protocol", which lets us cleanly disambiguate from sing-box
+            // configs that share the "outbounds" wrapper).
+            auto xrayType = getXraySubType(doc);
+            if (xrayType == XraySubType::outboundObject) {
+                if (auto e = makeProfileForXrayOutbound(doc.object()); e != nullptr) {
+                    updated_order += e;
+                }
+                return;
+            }
+            if (xrayType == XraySubType::outboundInJson || xrayType == XraySubType::outboundJsonArray) {
+                updateXray(doc, xrayType);
+                return;
+            }
+
             // SingBox
-            if (str.contains("outbounds") || str.contains("endpoints"))
-            {
-                updateSingBox(str);
+            auto subType = getSingBoxSubType(doc);
+            if (subType == SingBoxSubType::fullConfig) {
+                ent = Configs::ProfilesRepo::NewProfile("custom");
+                ent->Custom()->type = Configs::Custom::CustomFullConfig;
+                ent->Custom()->config = str;
+                updated_order += ent;
+            } else if (subType == SingBoxSubType::outboundObject) {
+                ent = Configs::ProfilesRepo::NewProfile("custom");
+                ent->Custom()->type = Configs::Custom::CustomOutbound;
+                ent->Custom()->config = str;
+                updated_order += ent;
+            } else if (subType == SingBoxSubType::outboundInJson || subType == SingBoxSubType::outboundJsonArray) {
+                updateSingBox(doc, subType);
                 return;
             }
 
@@ -80,12 +204,7 @@ namespace Subscription {
 
         // Clash
         if (str.contains("proxies:")) {
-            bool ok;
-            QString resp = API::defaultClient->Clash2Singbox(&ok, str);
-            if (ok && !resp.isEmpty())
-            {
-                updateSingBox(resp);
-            }
+            updateClash(str);
             return;
         }
 
@@ -100,7 +219,7 @@ namespace Subscription {
         if (str.count("\n") > 0 && needParse) {
             auto list = Disect(str);
             for (const auto &str2: list) {
-                update(str2.trimmed(), false);
+                update(str2.trimmed(), false, isBase64Decoded);
             }
             return;
         }
@@ -109,8 +228,6 @@ namespace Subscription {
         if (str.startsWith("//") || str.startsWith("#") || str.length() < 2) {
             return;
         }
-
-        std::shared_ptr<Configs::ProxyEntity> ent;
 
         // Json base64 link format
         if (str.startsWith("json://")) {
@@ -121,9 +238,9 @@ namespace Subscription {
             auto data = QJsonDocument::fromJson(dataBytes).object();
             if (data.isEmpty()) return;
             if (data.contains("protocol")) {
-                ent = Configs::ProfileManager::NewProxyEntity("xray" + data["protocol"].toString());
+                ent = Configs::ProfilesRepo::NewProfile("xray" + data["protocol"].toString());
             } else {
-                ent = data["type"].toString() == "hysteria2" ? Configs::ProfileManager::NewProxyEntity("hysteria") : Configs::ProfileManager::NewProxyEntity(data["type"].toString());
+                ent = data["type"].toString() == "hysteria2" ? Configs::ProfilesRepo::NewProfile("hysteria") : Configs::ProfilesRepo::NewProfile(data["type"].toString());
             }
             if (ent->outbound->invalid) return;
             ent->outbound->ParseFromJson(data);
@@ -131,14 +248,14 @@ namespace Subscription {
 
         // Json
         if (str.startsWith('{')) {
-            ent = Configs::ProfileManager::NewProxyEntity("custom");
+            ent = Configs::ProfilesRepo::NewProfile("custom");
             auto custom = ent->Custom();
             auto obj = QString2QJsonObject(str);
             if (obj.contains("outbounds")) {
-                custom->type = "fullconfig";
+                custom->type = Configs::Custom::CustomFullConfig;
                 custom->config = str;
             } else if (obj.contains("server")) {
-                custom->type = "outbound";
+                custom->type = Configs::Custom::CustomOutbound;
                 custom->config = str;
             } else {
                 return;
@@ -148,28 +265,28 @@ namespace Subscription {
         // SOCKS
         if (str.startsWith("socks5://") || str.startsWith("socks4://") ||
             str.startsWith("socks4a://") || str.startsWith("socks://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("socks");
+            ent = Configs::ProfilesRepo::NewProfile("socks");
             auto ok = ent->Socks()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // HTTP
         if (str.startsWith("http://") || str.startsWith("https://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("http");
+            ent = Configs::ProfilesRepo::NewProfile("http");
             auto ok = ent->Http()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // ShadowSocks
         if (str.startsWith("ss://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("shadowsocks");
+            ent = Configs::ProfilesRepo::NewProfile("shadowsocks");
             auto ok = ent->ShadowSocks()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // VMess
         if (str.startsWith("vmess://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("vmess");
+            ent = Configs::ProfilesRepo::NewProfile("vmess");
             auto ok = ent->VMess()->ParseFromLink(str);
             if (!ok) return;
         }
@@ -177,11 +294,11 @@ namespace Subscription {
         // VLESS
         if (str.startsWith("vless://")) {
             if (Configs::useXrayVless(str)) {
-                ent = Configs::ProfileManager::NewProxyEntity("xrayvless");
+                ent = Configs::ProfilesRepo::NewProfile("xrayvless");
                 auto ok = ent->XrayVLESS()->ParseFromLink(str);
                 if (!ok) return;
             } else {
-                ent = Configs::ProfileManager::NewProxyEntity("vless");
+                ent = Configs::ProfilesRepo::NewProfile("vless");
                 auto ok = ent->VLESS()->ParseFromLink(str);
                 if (!ok) return;
             }
@@ -189,43 +306,71 @@ namespace Subscription {
 
         // Trojan
         if (str.startsWith("trojan://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("trojan");
+            ent = Configs::ProfilesRepo::NewProfile("trojan");
             auto ok = ent->Trojan()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // AnyTLS
         if (str.startsWith("anytls://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("anytls");
+            ent = Configs::ProfilesRepo::NewProfile("anytls");
             auto ok = ent->AnyTLS()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // Hysteria
         if (str.startsWith("hysteria://") || str.startsWith("hysteria2://") || str.startsWith("hy2://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("hysteria");
+            ent = Configs::ProfilesRepo::NewProfile("hysteria");
             auto ok = ent->Hysteria()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // TUIC
         if (str.startsWith("tuic://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("tuic");
+            ent = Configs::ProfilesRepo::NewProfile("tuic");
             auto ok = ent->TUIC()->ParseFromLink(str);
+            if (!ok) return;
+        }
+
+        // Juicity
+        if (str.startsWith("juicity://")) {
+            ent = Configs::ProfilesRepo::NewProfile("juicity");
+            auto ok = ent->Juicity()->ParseFromLink(str);
+            if (!ok) return;
+        }
+
+        // TrustTunnel
+        if (str.startsWith("tt://")) {
+            ent = Configs::ProfilesRepo::NewProfile("trusttunnel");
+            auto ok = ent->TrustTunnel()->ParseFromLink(str);
+            if (!ok) return;
+        }
+
+        // ShadowTLS
+        if (str.startsWith("shadowtls://")) {
+            ent = Configs::ProfilesRepo::NewProfile("shadowtls");
+            auto ok = ent->ShadowTLS()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // Wireguard
         if (str.startsWith("wg://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("wireguard");
+            ent = Configs::ProfilesRepo::NewProfile("wireguard");
             auto ok = ent->Wireguard()->ParseFromLink(str);
             if (!ok) return;
         }
 
         // SSH
         if (str.startsWith("ssh://")) {
-            ent = Configs::ProfileManager::NewProxyEntity("ssh");
+            ent = Configs::ProfilesRepo::NewProfile("ssh");
             auto ok = ent->SSH()->ParseFromLink(str);
+            if (!ok) return;
+        }
+
+        // Naive
+        if (str.startsWith("naive+https://") || str.startsWith("naive+quic://")) {
+            ent = Configs::ProfilesRepo::NewProfile("naive");
+            auto ok = ent->Naive()->ParseFromLink(str);
             if (!ok) return;
         }
 
@@ -235,24 +380,31 @@ namespace Subscription {
         updated_order += ent;
     }
 
-    void RawUpdater::updateSingBox(const QString& str)
+    void RawUpdater::updateSingBox(const QJsonDocument &doc, SingBoxSubType type)
     {
-        auto json = QString2QJsonObject(str);
-        auto outbounds = json["outbounds"].toArray();
-        auto endpoints = json["endpoints"].toArray();
+        QJsonArray outbounds, endpoints;
+        if (type == SingBoxSubType::outboundInJson) {
+            auto json = doc.object();
+            outbounds = json["outbounds"].toArray();
+            endpoints = json["endpoints"].toArray();
+        } else if (type == SingBoxSubType::outboundJsonArray) {
+            outbounds = doc.array();
+        } else {
+            return;
+        }
         QJsonArray items;
-        for (auto && outbound : outbounds)
+        for (const auto& outbound : outbounds)
         {
             if (!outbound.isObject()) continue;
             items.append(outbound.toObject());
         }
-        for (auto && endpoint : endpoints)
+        for (const auto& endpoint : endpoints)
         {
             if (!endpoint.isObject()) continue;
             items.append(endpoint.toObject());
         }
 
-        for (auto o : items)
+        for (const auto& o : items)
         {
             auto out = o.toObject();
             if (out.isEmpty())
@@ -261,82 +413,110 @@ namespace Subscription {
                 continue;
             }
 
-            std::shared_ptr<Configs::ProxyEntity> ent;
+            std::shared_ptr<Configs::Profile> ent;
 
             // SOCKS
             if (out["type"] == "socks") {
-                ent = Configs::ProfileManager::NewProxyEntity("socks");
+                ent = Configs::ProfilesRepo::NewProfile("socks");
                 auto ok = ent->Socks()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // HTTP
             if (out["type"] == "http") {
-                ent = Configs::ProfileManager::NewProxyEntity("http");
+                ent = Configs::ProfilesRepo::NewProfile("http");
                 auto ok = ent->Http()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // ShadowSocks
             if (out["type"] == "shadowsocks") {
-                ent = Configs::ProfileManager::NewProxyEntity("shadowsocks");
+                ent = Configs::ProfilesRepo::NewProfile("shadowsocks");
                 auto ok = ent->ShadowSocks()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // VMess
             if (out["type"] == "vmess") {
-                ent = Configs::ProfileManager::NewProxyEntity("vmess");
+                ent = Configs::ProfilesRepo::NewProfile("vmess");
                 auto ok = ent->VMess()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // VLESS
             if (out["type"] == "vless") {
-                ent = Configs::ProfileManager::NewProxyEntity("vless");
+                ent = Configs::ProfilesRepo::NewProfile("vless");
                 auto ok = ent->VLESS()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // Trojan
             if (out["type"] == "trojan") {
-                ent = Configs::ProfileManager::NewProxyEntity("trojan");
+                ent = Configs::ProfilesRepo::NewProfile("trojan");
                 auto ok = ent->Trojan()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // AnyTLS
             if (out["type"] == "anytls") {
-                ent = Configs::ProfileManager::NewProxyEntity("anytls");
+                ent = Configs::ProfilesRepo::NewProfile("anytls");
                 auto ok = ent->AnyTLS()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // Hysteria
             if (out["type"] == "hysteria" || out["type"] == "hysteria2") {
-                ent = Configs::ProfileManager::NewProxyEntity("hysteria");
+                ent = Configs::ProfilesRepo::NewProfile("hysteria");
                 auto ok = ent->Hysteria()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // TUIC
             if (out["type"] == "tuic") {
-                ent = Configs::ProfileManager::NewProxyEntity("tuic");
+                ent = Configs::ProfilesRepo::NewProfile("tuic");
                 auto ok = ent->TUIC()->ParseFromJson(out);
+                if (!ok) continue;
+            }
+
+            // Juicity
+            if (out["type"] == "juicity") {
+                ent = Configs::ProfilesRepo::NewProfile("juicity");
+                auto ok = ent->Juicity()->ParseFromJson(out);
+                if (!ok) continue;
+            }
+
+            // TrustTunnel
+            if (out["type"] == "trusttunnel") {
+                ent = Configs::ProfilesRepo::NewProfile("trusttunnel");
+                auto ok = ent->TrustTunnel()->ParseFromJson(out);
+                if (!ok) continue;
+            }
+
+            // ShadowTLS
+            if (out["type"] == "shadowtls") {
+                ent = Configs::ProfilesRepo::NewProfile("shadowtls");
+                auto ok = ent->ShadowTLS()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // Wireguard
             if (out["type"] == "wireguard") {
-                ent = Configs::ProfileManager::NewProxyEntity("wireguard");
+                ent = Configs::ProfilesRepo::NewProfile("wireguard");
                 auto ok = ent->Wireguard()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
             // SSH
             if (out["type"] == "ssh") {
-                ent = Configs::ProfileManager::NewProxyEntity("ssh");
+                ent = Configs::ProfilesRepo::NewProfile("ssh");
                 auto ok = ent->SSH()->ParseFromJson(out);
+                if (!ok) continue;
+            }
+
+            // Naive
+            if (out["type"] == "naive") {
+                ent = Configs::ProfilesRepo::NewProfile("naive");
+                auto ok = ent->Naive()->ParseFromJson(out);
                 if (!ok) continue;
             }
 
@@ -346,9 +526,124 @@ namespace Subscription {
         }
     }
 
+    void RawUpdater::updateXray(const QJsonDocument &doc, XraySubType type)
+    {
+        QJsonArray outbounds;
+        if (type == XraySubType::outboundInJson) {
+            outbounds = doc.object()["outbounds"].toArray();
+        } else if (type == XraySubType::outboundJsonArray) {
+            outbounds = doc.array();
+        } else {
+            return;
+        }
+        for (const auto &o : outbounds) {
+            if (!o.isObject()) continue;
+            if (auto e = makeProfileForXrayOutbound(o.toObject()); e != nullptr) {
+                updated_order += e;
+            }
+        }
+    }
+
+    void RawUpdater::updateClash(const QString& str)
+    {
+        try {
+            fkyaml::node node = fkyaml::node::deserialize(str.toStdString());
+            clash::Clash clash_config = node.get_value<clash::Clash>();
+    
+            for (const auto& out : clash_config.proxies)
+            {
+                std::shared_ptr<Configs::Profile> ent;
+    
+                // SOCKS
+                if (out.type == "socks5") {
+                    ent = Configs::ProfilesRepo::NewProfile("socks");
+                    auto ok = ent->Socks()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // HTTP
+                if (out.type == "http") {
+                    ent = Configs::ProfilesRepo::NewProfile("http");
+                    auto ok = ent->Http()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // ShadowSocks
+                if (out.type == "ss") {
+                    ent = Configs::ProfilesRepo::NewProfile("shadowsocks");
+                    auto ok = ent->ShadowSocks()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // VMess
+                if (out.type == "vmess") {
+                    ent = Configs::ProfilesRepo::NewProfile("vmess");
+                    auto ok = ent->VMess()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // VLESS
+                if (out.type == "vless") {
+                    if (out.network == "xhttp" || (!out.encryption.empty() && out.encryption != "none")) {
+                        ent = Configs::ProfilesRepo::NewProfile("xrayvless");
+                        auto ok = ent->XrayVLESS()->ParseFromClash(out);
+                        if (!ok) continue;
+                    } else {
+                        ent = Configs::ProfilesRepo::NewProfile("vless");
+                        auto ok = ent->VLESS()->ParseFromClash(out);
+                        if (!ok) continue;
+                    }
+                }
+    
+                // Trojan
+                if (out.type == "trojan") {
+                    ent = Configs::ProfilesRepo::NewProfile("trojan");
+                    auto ok = ent->Trojan()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // AnyTLS
+                if (out.type == "anytls") {
+                    ent = Configs::ProfilesRepo::NewProfile("anytls");
+                    auto ok = ent->AnyTLS()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // Hysteria
+                if (out.type == "hysteria" || out.type == "hysteria2") {
+                    ent = Configs::ProfilesRepo::NewProfile("hysteria");
+                    auto ok = ent->Hysteria()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // TUIC
+                if (out.type == "tuic") {
+                    ent = Configs::ProfilesRepo::NewProfile("tuic");
+                    auto ok = ent->TUIC()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                // SSH
+                if (out.type == "ssh") {
+                    ent = Configs::ProfilesRepo::NewProfile("ssh");
+                    auto ok = ent->SSH()->ParseFromClash(out);
+                    if (!ok) continue;
+                }
+    
+                if (ent == nullptr) continue;
+    
+                updated_order += ent;
+            }
+        } catch (const fkyaml::exception &ex) {
+            runOnUiThread([=] {
+                MessageBoxWarning("YAML Exception", ex.what());
+            });
+        }
+    }
+
     void RawUpdater::updateWireguardFileConfig(const QString& str)
     {
-        auto ent = Configs::ProfileManager::NewProxyEntity("wireguard");
+        auto ent = Configs::ProfilesRepo::NewProfile("wireguard");
         auto ok = ent->Wireguard()->ParseFromLink(str);
         if (!ok) return;
         updated_order += ent;
@@ -358,7 +653,7 @@ namespace Subscription {
     {
         auto json = QString2QJsonObject(str);
 
-        for (auto o : json["servers"].toArray())
+        for (const auto& o : json["servers"].toArray())
         {
             auto out = o.toObject();
             if (out.isEmpty())
@@ -367,7 +662,7 @@ namespace Subscription {
                 continue;
             }
 
-            auto ent = Configs::ProfileManager::NewProxyEntity("shadowsocks");
+            auto ent = Configs::ProfilesRepo::NewProfile("shadowsocks");
             auto ok = ent->ShadowSocks()->ParseFromSIP008(out);
             if (!ok) continue;
             updated_order += ent;
@@ -384,6 +679,7 @@ namespace Subscription {
             auto items = QStringList{
                 QObject::tr("Add profiles to this group"),
                 QObject::tr("Create new subscription group"),
+                QObject::tr("Import HTTP proxy profile"),
             };
             bool ok;
             auto a = QInputDialog::getItem(nullptr,
@@ -391,17 +687,19 @@ namespace Subscription {
                                            QObject::tr("%1\nHow to update?").arg(content),
                                            items, 0, false, &ok);
             if (!ok) return;
-            asURL = true;
-            if (items.indexOf(a) == 1) createNewGroup = true;
+            switch (items.indexOf(a)) {
+                case 1: createNewGroup = true;
+                case 0: asURL = true; break;
+            }
         }
 
         runOnNewThread([=,this] {
             auto gid = _sub_gid;
             if (createNewGroup) {
-                auto group = Configs::ProfileManager::NewGroup();
+                auto group = Configs::GroupsRepo::NewGroup();
                 group->name = QUrl(str).host();
                 group->url = str;
-                Configs::profileManager->AddGroup(group);
+                Configs::dataManager->groupsRepo->AddGroup(group);
                 gid = group->id;
                 MW_dialog_message("SubUpdater", "NewGroup");
             }
@@ -413,7 +711,7 @@ namespace Subscription {
 
     void GroupUpdater::Update(const QString &_str, int _sub_gid, bool _not_sub_as_url) {
         // 创建 rawUpdater
-        Configs::dataStore->imported_count = 0;
+        Configs::dataManager->settingsRepo->imported_count = 0;
         auto rawUpdater = std::make_unique<RawUpdater>();
         rawUpdater->gid_add_to = _sub_gid;
 
@@ -421,7 +719,7 @@ namespace Subscription {
         QString sub_user_info;
         bool asURL = _sub_gid >= 0 || _not_sub_as_url; // 把 _str 当作 url 处理（下载内容）
         auto content = _str.trimmed();
-        auto group = Configs::profileManager->GetGroup(_sub_gid);
+        auto group = Configs::dataManager->groupsRepo->GetGroup(_sub_gid);
         if (group != nullptr && group->archive) return;
 
         // 网络请求
@@ -429,7 +727,7 @@ namespace Subscription {
             auto groupName = group == nullptr ? content : group->name;
             MW_show_log(">>>>>>>> " + QObject::tr("Requesting subscription: %1").arg(groupName));
 
-            auto resp = NetworkRequestHelper::HttpGet(content, Configs::dataStore->sub_send_hwid);
+            auto resp = NetworkRequestHelper::HttpGet(content, Configs::dataManager->settingsRepo->sub_send_hwid);
             if (!resp.error.isEmpty()) {
                 MW_show_log("<<<<<<<< " + QObject::tr("Requesting subscription %1 error: %2").arg(groupName, resp.error + "\n" + resp.data));
                 return;
@@ -441,47 +739,58 @@ namespace Subscription {
             MW_show_log("<<<<<<<< " + QObject::tr("Subscription request fininshed: %1").arg(groupName));
         }
 
-        QList<std::shared_ptr<Configs::ProxyEntity>> in;          // 更新前
-        QList<std::shared_ptr<Configs::ProxyEntity>> out_all;     // 更新前 + 更新后
-        QList<std::shared_ptr<Configs::ProxyEntity>> out;         // 更新后
-        QList<std::shared_ptr<Configs::ProxyEntity>> only_in;     // 只在更新前有的
-        QList<std::shared_ptr<Configs::ProxyEntity>> only_out;    // 只在更新后有的
-        QList<std::shared_ptr<Configs::ProxyEntity>> update_del;  // 更新前后都有的，需要删除的新配置
-        QList<std::shared_ptr<Configs::ProxyEntity>> update_keep; // 更新前后都有的，被保留的旧配置
+        QList<std::shared_ptr<Configs::Profile>> in;
 
         if (group != nullptr) {
-            in = group->GetProfileEnts();
             group->sub_last_update = QDateTime::currentMSecsSinceEpoch() / 1000;
             group->info = sub_user_info;
-            group->Save();
+            Configs::dataManager->groupsRepo->Save(group);
             //
-            if (Configs::dataStore->sub_clear) {
+            if (Configs::dataManager->settingsRepo->sub_clear) {
                 MW_show_log(QObject::tr("Clearing servers..."));
-                Configs::profileManager->BatchDeleteProfiles(group->profiles);
+                if (!Configs::dataManager->profilesRepo->BatchDeleteProfiles(group->profiles, Configs::dataManager->settingsRepo->allow_stopping_active_profile)) {
+                    runOnUiThread([=] {
+                        MessageBoxWarning("Internal Error", "DB Error when deleting profiles, Please try again.");
+                    });
+                    return;
+                }
+            } else {
+                in = Configs::dataManager->profilesRepo->GetProfileBatch(group->Profiles());
             }
         }
 
         MW_show_log(">>>>>>>> " + QObject::tr("Processing subscription data..."));
         rawUpdater->update(content);
-        Configs::profileManager->AddProfileBatch(rawUpdater->updated_order, rawUpdater->gid_add_to);
+        content.clear();
+        Configs::dataManager->profilesRepo->AddProfileBatch(rawUpdater->updated_order, rawUpdater->gid_add_to);
         MW_show_log(">>>>>>>> " + QObject::tr("Process complete, applying..."));
 
         if (group != nullptr) {
-            out_all = group->GetProfileEnts();
+            QList<std::shared_ptr<Configs::Profile>> out_all;
+            out_all = Configs::dataManager->profilesRepo->GetProfileBatch(group->Profiles());;
 
             QString change_text;
 
-            if (Configs::dataStore->sub_clear) {
+            if (Configs::dataManager->settingsRepo->sub_clear) {
                 // all is new profile
-                for (const auto &ent: out_all) {
-                    change_text += "[+] " + ent->outbound->DisplayTypeAndName() + "\n";
+                if (out_all.size() >= 1000) {
+                    change_text += "[+] " + Int2String(out_all.size()) + " profiles\n";
+                } else {
+                    for (const auto &ent: out_all) {
+                        change_text += "[+] " + ent->outbound->DisplayTypeAndName() + "\n";
+                    }
                 }
             } else {
+                QList<std::shared_ptr<Configs::Profile>> update_keep;
+                QList<std::shared_ptr<Configs::Profile>> update_del;
+                QList<std::shared_ptr<Configs::Profile>> only_out;
+                QList<std::shared_ptr<Configs::Profile>> only_in;
+                QList<std::shared_ptr<Configs::Profile>> out;
                 // find and delete not updated profile by ProfileFilter
                 Configs::ProfileFilter::OnlyInSrc_ByPointer(out_all, in, out);
-                Configs::ProfileFilter::OnlyInSrc(in, out, only_in);
-                Configs::ProfileFilter::OnlyInSrc(out, in, only_out);
-                Configs::ProfileFilter::Common(in, out, update_keep, update_del);
+                Configs::ProfileFilter::OnlyInSrc(in, out, only_in, false);
+                Configs::ProfileFilter::OnlyInSrc(out, in, only_out, false);
+                Configs::ProfileFilter::Common(in, out, update_keep, update_del, false);
                 QString notice_added;
                 QString notice_deleted;
                 if (only_out.size() < 1000)
@@ -516,7 +825,7 @@ namespace Subscription {
                         group->profiles.append(ent->id);
                     }
                 }
-                group->Save();
+                Configs::dataManager->groupsRepo->Save(group);
 
                 // cleanup
                 QList<int> del_ids;
@@ -525,7 +834,11 @@ namespace Subscription {
                         del_ids.append(ent->id);
                     }
                 }
-                Configs::profileManager->BatchDeleteProfiles(del_ids);
+                if (!Configs::dataManager->profilesRepo->BatchDeleteProfiles(del_ids, Configs::dataManager->settingsRepo->allow_stopping_active_profile)) {
+                    runOnUiThread([=] {
+                       MessageBoxWarning("Internal error", "DB Error when deleting profiles, data may be corrupted");
+                    });
+                }
 
                 change_text = "\n" + QObject::tr("Added %1 profiles:\n%2\nDeleted %3 Profiles:\n%4")
                                          .arg(only_out.length())
@@ -538,7 +851,7 @@ namespace Subscription {
             MW_show_log("<<<<<<<< " + QObject::tr("Change of %1:").arg(group->name) + "\n" + change_text);
             MW_dialog_message("SubUpdater", "finish-dingyue");
         } else {
-            Configs::dataStore->imported_count = rawUpdater->updated_order.count();
+            Configs::dataManager->settingsRepo->imported_count = rawUpdater->updated_order.count();
             MW_dialog_message("SubUpdater", "finish");
         }
     }
@@ -555,7 +868,7 @@ void serialUpdateSubscription(const QList<int> &groupsTabOrder, int _order, bool
     }
 
     // calculate this group
-    auto group = Configs::profileManager->GetGroup(groupsTabOrder[_order]);
+    auto group = Configs::dataManager->groupsRepo->GetGroup(groupsTabOrder[_order]);
     if (group == nullptr || should_skip_group(group)) {
         serialUpdateSubscription(groupsTabOrder, _order + 1, onlyAllowed);
         return;
@@ -564,7 +877,7 @@ void serialUpdateSubscription(const QList<int> &groupsTabOrder, int _order, bool
     int nextOrder = _order + 1;
     while (nextOrder < groupsTabOrder.size()) {
         auto nextGid = groupsTabOrder[nextOrder];
-        auto nextGroup = Configs::profileManager->GetGroup(nextGid);
+        auto nextGroup = Configs::dataManager->groupsRepo->GetGroup(nextGid);
         if (!should_skip_group(nextGroup)) {
             break;
         }
@@ -584,6 +897,6 @@ void UI_update_all_groups(bool onlyAllowed) {
         return;
     }
 
-    auto groupsTabOrder = Configs::profileManager->groupsTabOrder;
+    auto groupsTabOrder = Configs::dataManager->groupsRepo->GetGroupsTabOrder();
     serialUpdateSubscription(groupsTabOrder, 0, onlyAllowed);
 }

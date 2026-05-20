@@ -10,7 +10,7 @@ namespace Configs {
     {
         auto url = QUrl(link);
         if (!url.isValid()) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         outbound::ParseFromLink(link);
         uuid = url.userName();
@@ -27,7 +27,7 @@ namespace Configs {
         
         if (server_port == 0) server_port = 443;
 
-        return !(uuid.isEmpty() || password.isEmpty() || server.isEmpty());
+        return !(uuid.isEmpty() || server.isEmpty());
     }
 
     bool tuic::ParseFromJson(const QJsonObject& object)
@@ -45,19 +45,36 @@ namespace Configs {
         return true;
     }
 
+    bool tuic::ParseFromClash(const clash::Proxies& object)
+    {
+        if (object.type != "tuic") return false;
+        outbound::ParseFromClash(object);
+        uuid = QString::fromStdString(object.uuid);
+        password = QString::fromStdString(object.password);
+        if (!object.congestion_controller.empty()) congestion_control = QString::fromStdString(object.congestion_controller);
+        if (!object.udp_relay_mode.empty()) udp_relay_mode = QString::fromStdString(object.udp_relay_mode);
+        zero_rtt_handshake = object.reduce_rtt;
+        if (object.heartbeat_interval > 0) heartbeat = QString::number(object.heartbeat_interval) + "ms";
+        if (!object.ip.empty()) server = QString::fromStdString(object.ip);
+
+        tls->ParseFromClash(object);
+        tls->enabled = true;
+        return true;
+    }
+
     QString tuic::ExportToLink()
     {
         QUrl url;
         QUrlQuery query;
         url.setScheme("tuic");
         url.setUserName(uuid);
-        url.setPassword(password);
+        if (!password.isEmpty()) url.setPassword(password);
         url.setHost(server);
         url.setPort(server_port);
         if (!name.isEmpty()) url.setFragment(name);
 
         if (!congestion_control.isEmpty()) query.addQueryItem("congestion_control", congestion_control);
-        if (!udp_relay_mode.isEmpty()) query.addQueryItem("udp_relay_mode", udp_relay_mode);
+        if (!udp_relay_mode.isEmpty() && !udp_over_stream) query.addQueryItem("udp_relay_mode", udp_relay_mode);
         if (udp_over_stream) query.addQueryItem("udp_over_stream", "true");
         if (zero_rtt_handshake) query.addQueryItem("zero_rtt_handshake", "true");
         if (!heartbeat.isEmpty()) query.addQueryItem("heartbeat", heartbeat);
@@ -77,7 +94,7 @@ namespace Configs {
         if (!uuid.isEmpty()) object["uuid"] = uuid;
         if (!password.isEmpty()) object["password"] = password;
         if (!congestion_control.isEmpty()) object["congestion_control"] = congestion_control;
-        if (!udp_relay_mode.isEmpty()) object["udp_relay_mode"] = udp_relay_mode;
+        if (!udp_relay_mode.isEmpty() && !udp_over_stream) object["udp_relay_mode"] = udp_relay_mode;
         if (udp_over_stream) object["udp_over_stream"] = udp_over_stream;
         if (zero_rtt_handshake) object["zero_rtt_handshake"] = zero_rtt_handshake;
         if (!heartbeat.isEmpty()) object["heartbeat"] = heartbeat;
@@ -93,7 +110,7 @@ namespace Configs {
         if (!uuid.isEmpty()) object["uuid"] = uuid;
         if (!password.isEmpty()) object["password"] = password;
         if (!congestion_control.isEmpty()) object["congestion_control"] = congestion_control;
-        if (!udp_relay_mode.isEmpty()) object["udp_relay_mode"] = udp_relay_mode;
+        if (!udp_relay_mode.isEmpty() && !udp_over_stream) object["udp_relay_mode"] = udp_relay_mode;
         if (udp_over_stream) object["udp_over_stream"] = udp_over_stream;
         if (zero_rtt_handshake) object["zero_rtt_handshake"] = zero_rtt_handshake;
         if (!heartbeat.isEmpty()) object["heartbeat"] = heartbeat;

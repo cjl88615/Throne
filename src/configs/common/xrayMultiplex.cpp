@@ -6,7 +6,7 @@ namespace Configs {
     bool xrayMultiplex::ParseFromLink(const QString &link) {
         auto url = QUrl(link);
         if (!url.isValid()) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         if (query.hasQueryItem("mux")) enabled = query.queryItemValue("mux").replace("1", "true") == "true", useDefault = false;
         if (query.hasQueryItem("mux_concurrency")) concurrency = query.queryItemValue("mux_concurrency").toInt();
@@ -19,6 +19,15 @@ namespace Configs {
         if (object.contains("enabled")) enabled = object["enabled"].toBool(), useDefault = false;
         if (object.contains("concurrency")) concurrency = object["concurrency"].toInt();
         if (object.contains("xudpConcurrency")) xudpConcurrency = object["xudpConcurrency"].toInt();
+        return true;
+    }
+
+    bool xrayMultiplex::ParseFromClash(const clash::Proxies& object) {
+        enabled = object.smux.enabled;
+        useDefault = false;
+        if (object.smux.max_streams > 0) {
+            concurrency = object.smux.max_streams;
+        }
         return true;
     }
 
@@ -42,9 +51,9 @@ namespace Configs {
 
     BuildResult xrayMultiplex::Build() {
         auto obj = ExportToJson();
-        if (useDefault && dataStore->xray_mux_default_on) obj["enabled"] = true;
+        if (useDefault && Configs::dataManager->settingsRepo->xray_mux_default_on) obj["enabled"] = true;
         if (!obj["enabled"].toBool()) return {{}, ""};
-        if (dataStore->xray_mux_concurrency > 0 && concurrency <= 0) obj["concurrency"] = concurrency;
+        if (Configs::dataManager->settingsRepo->xray_mux_concurrency > 0 && concurrency <= 0) obj["concurrency"] = concurrency;
         if (xudpConcurrency > 0) obj["xudpConcurrency"] = xudpConcurrency;
         return {obj, ""};
     }

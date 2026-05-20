@@ -13,6 +13,46 @@
 #endif
 //
 
+// OS
+enum osType
+{
+    unknown = 0,
+    Linux = 1,
+    Windows = 2,
+    Darwin = 3,
+};
+
+inline osType getOS()
+{
+#ifdef Q_OS_MACOS
+    return Darwin;
+#endif
+#ifdef Q_OS_LINUX
+    return Linux;
+#endif
+#ifdef Q_OS_WIN
+    return Windows;
+#endif
+    return unknown;
+}
+
+inline QString getOSString() {
+    auto os = getOS();
+    if (os == Linux) {
+        return "Linux";
+    }
+    if (os == Darwin) {
+        return "Darwin";
+    }
+    if (os == Windows) {
+        return "Windows";
+    }
+    if (os == unknown) {
+        return "Unknown";
+    }
+    return "Unknown";
+}
+
 inline QString software_name;
 inline QString software_core_name;
 
@@ -26,6 +66,7 @@ inline std::function<void(QString, QString)> MW_dialog_message;
 
 class QThread;
 inline QThread *DS_cores;
+inline QThread *LogThread;
 
 // Timers
 
@@ -57,7 +98,7 @@ QStringList SplitLines(const QString &_string);
 
 QStringList SplitLinesSkipSharp(const QString &_string, int maxLine = 0);
 
-QStringList SplitAndTrim(QString raw, QString seperator);
+QStringList SplitAndTrim(const QString& raw, const QString& seperator, bool keepEmpty = true);
 
 // Base64
 
@@ -66,8 +107,6 @@ QByteArray DecodeB64IfValid(const QString &input, QByteArray::Base64Options opti
 // URL
 
 class QUrlQuery;
-
-#define GetQuery(url) QUrlQuery((url).query(QUrl::ComponentFormattingOption::FullyDecoded));
 
 QString GetQueryValue(const QUrlQuery &q, const QString &key, const QString &def = "");
 
@@ -146,6 +185,8 @@ inline QString DisplayDest(const QString& dest, QString domain)
 // Format & Misc
 
 int MkPort();
+
+QList<int> MkManyPorts(int num);
 
 QString DisplayTime(long long time, int formatType = 0);
 

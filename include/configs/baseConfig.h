@@ -2,6 +2,7 @@
 
 #include <QJsonObject>
 #include "include/global/Configs.hpp"
+#include "include/configs/sub/clash.hpp"
 
 namespace Configs
 {
@@ -10,14 +11,20 @@ namespace Configs
         QString error;
     };
 
-    class baseConfig : public JsonStore
+    class baseConfig
     {
     public:
+        virtual ~baseConfig() = default;
+
         virtual bool ParseFromLink(const QString& link) {
             return false;
         }
 
         virtual bool ParseFromJson(const QJsonObject& object) {
+            return false;
+        }
+
+        virtual bool ParseFromClash(const clash::Proxies& object) {
             return false;
         }
 

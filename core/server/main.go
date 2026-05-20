@@ -1,10 +1,11 @@
 package main
 
 import (
-	"Core/gen"
-	"Core/internal/boxmain"
+	"ThroneCore/internal/boxmain"
+	"ThroneCore/ipc"
+	"ThroneCore/parentcheck"
+	"ThroneCore/test_utils"
 	"context"
-	"flag"
 	"fmt"
 	"github.com/xtls/xray-core/core"
 	"log"
@@ -12,22 +13,25 @@ import (
 	"os"
 	"runtime"
 	runtimeDebug "runtime/debug"
-	"strconv"
 	"syscall"
 	"time"
 
-	_ "Core/internal/distro/all"
+	_ "ThroneCore/internal/distro/all"
 	C "github.com/sagernet/sing-box/constant"
 )
 
 func RunCore() {
-	_port := flag.Int("port", 19810, "")
-	_debug := flag.Bool("debug", false, "")
-	flag.CommandLine.Parse(os.Args[1:])
-	debug = *_debug
+	socketName := os.Getenv("THRONE_CORE_SOCKET")
+	if socketName == "" {
+		log.Fatal("THRONE_CORE_SOCKET not set")
+	}
+	debug = os.Getenv("THRONE_CORE_DEBUG") == "1"
 
+	parentcheck.CheckParentProcess()
+
+	// Exit when parent dies
 	go func() {
-		parent, err := os.FindProcess(os.Getppid())
+		parent, err := os.FindProcess(parentcheck.ParentPID)
 		if err != nil {
 			log.Fatalln("find parent:", err)
 		}
@@ -44,24 +48,26 @@ func RunCore() {
 			}
 		}
 	}()
+
 	boxmain.DisableColor()
 
-	// RPC
-	go func() {
-		for {
-			time.Sleep(100 * time.Millisecond)
-			conn, err := net.Dial("tcp", "127.0.0.1:"+strconv.Itoa(*_port))
-			if err == nil {
-				conn.Close()
-				fmt.Printf("Core listening at %v\n", "127.0.0.1:"+strconv.Itoa(*_port))
-				return
-			}
+	// Connect to GUI IPC socket, retry up to 10 times
+	var conn net.Conn
+	var err error
+	for i := 0; i < 10; i++ {
+		conn, err = ipc.ConnectIPC(socketName, parentcheck.ParentPID)
+		if err == nil {
+			break
 		}
-	}()
-	err := gen.ListenAndServeLibcoreService("tcp", "127.0.0.1:"+strconv.Itoa(*_port), new(server))
-	if err != nil {
-		log.Fatalf("failed to listen: %v", err)
+		log.Printf("IPC connect attempt %d/10 failed: %v", i+1, err)
+		time.Sleep(500 * time.Millisecond)
 	}
+	if err != nil {
+		log.Fatalf("failed to connect to GUI socket after 10 attempts: %v", err)
+	}
+
+	fmt.Println("Core Has Successfully Connected to Throne!")
+	runDispatch(conn)
 }
 
 func main() {
@@ -82,13 +88,12 @@ func main() {
 			time.Sleep(2 * time.Second)
 			runtime.ReadMemStats(&memStats)
 			if memStats.HeapAlloc > 1.5*1024*1024*1024 {
-				// too much memory for sing-box, crash
 				panic("Memory has reached 1.5 GB, this is not normal")
 			}
 		}
 	}()
 
-	testCtx, cancelTests = context.WithCancel(context.Background())
+	test_utils.TestCtx, test_utils.CancelTests = context.WithCancel(context.Background())
 	RunCore()
 	return
 }

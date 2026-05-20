@@ -21,6 +21,7 @@ namespace Configs {
                 
                 QString net = objN["net"].toString();
                 if (net == "h2") net = "http";
+                if (QString type = objN["type"].toString(); type == "http") net = "http";
                 transport->type = net;
                 transport->host = objN["host"].toString();
                 transport->path = objN["path"].toString();
@@ -41,7 +42,7 @@ namespace Configs {
         // Standard VMess URL format
         auto url = QUrl(link);
         if (!url.isValid()) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         outbound::ParseFromLink(link);
         uuid = url.userName();
@@ -62,6 +63,7 @@ namespace Configs {
         if (query.hasQueryItem("globalPadding")) global_padding = query.queryItemValue("globalPadding") == "true";
         if (query.hasQueryItem("authenticatedLength")) authenticated_length = query.queryItemValue("authenticatedLength") == "true";
         if (query.hasQueryItem("packetEncoding")) packet_encoding = query.queryItemValue("packetEncoding");
+        if (!Configs::vPacketEncoding.contains(packet_encoding)) packet_encoding = "";
 
         return !(uuid.isEmpty() || server.isEmpty());
     }
@@ -84,6 +86,21 @@ namespace Configs {
         return true;
     }
 
+    bool vmess::ParseFromClash(const clash::Proxies& object)
+    {
+        if (object.type != "vmess") return false;
+        outbound::ParseFromClash(object);
+        uuid = QString::fromStdString(object.uuid);
+        if (!object.cipher.empty()) security = QString::fromStdString(object.cipher);
+        alter_id = object.alterId;
+        packet_encoding = QString::fromStdString(object.packet_encoding);
+
+        tls->ParseFromClash(object);
+        transport->ParseFromClash(object);
+        multiplex->ParseFromClash(object);
+        return true;
+    }
+
     QString vmess::ExportToLink()
     {
         QUrl url;
@@ -103,7 +120,7 @@ namespace Configs {
         if (alter_id > 0) query.addQueryItem("alterId", QString::number(alter_id));
         if (global_padding) query.addQueryItem("globalPadding", "true");
         if (authenticated_length) query.addQueryItem("authenticatedLength", "true");
-        if (!packet_encoding.isEmpty()) query.addQueryItem("packetEncoding", packet_encoding);
+        query.addQueryItem("packetEncoding", packet_encoding.isEmpty() ? "none" : packet_encoding);
         
         if (!query.isEmpty()) url.setQuery(query);
         return url.toString(QUrl::FullyEncoded);
@@ -119,10 +136,10 @@ namespace Configs {
         if (alter_id > 0) object["alter_id"] = alter_id;
         if (global_padding) object["global_padding"] = global_padding;
         if (authenticated_length) object["authenticated_length"] = authenticated_length;
-        if (!packet_encoding.isEmpty()) object["packet_encoding"] = packet_encoding;
-        if (tls->enabled) object["tls"] = tls->ExportToJson();
-        if (!transport->type.isEmpty()) object["transport"] = transport->ExportToJson();
-        if (multiplex->enabled) object["multiplex"] = multiplex->ExportToJson();
+        object["packet_encoding"] = packet_encoding;
+        if (auto tlsObj = tls->ExportToJson(); !tlsObj.isEmpty()) object["tls"] = tlsObj;
+        if (auto transportObj = transport->ExportToJson(); !transportObj.isEmpty()) object["transport"] = transportObj;
+        if (auto muxObj = multiplex->ExportToJson(); !muxObj.isEmpty()) object["multiplex"] = muxObj;
         return object;
     }
 
@@ -136,10 +153,10 @@ namespace Configs {
         if (alter_id > 0) object["alter_id"] = alter_id;
         if (global_padding) object["global_padding"] = global_padding;
         if (authenticated_length) object["authenticated_length"] = authenticated_length;
-        if (!packet_encoding.isEmpty()) object["packet_encoding"] = packet_encoding;
-        if (tls->enabled) object["tls"] = tls->Build().object;
-        if (!transport->type.isEmpty()) object["transport"] = transport->Build().object;
-        if (auto obj = multiplex->Build().object; !obj.isEmpty()) object["multiplex"] = obj;
+        object["packet_encoding"] = packet_encoding;
+        if (auto tlsObj = tls->Build().object; !tlsObj.isEmpty()) object["tls"] = tlsObj;
+        if (auto transportObj = transport->Build().object; !transportObj.isEmpty()) object["transport"] = transportObj;
+        if (auto muxObj = multiplex->Build().object; !muxObj.isEmpty()) object["multiplex"] = muxObj;
         return {object, ""};
     }
 

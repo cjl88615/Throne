@@ -5,6 +5,8 @@
 #include <QDir>
 #include <QApplication>
 
+
+
 #include "include/ui/mainwindow.h"
 
 namespace Configs_sys {
@@ -16,29 +18,18 @@ namespace Configs_sys {
         waitForFinished();
     }
 
-    CoreProcess::CoreProcess(const QString &core_path, const QStringList &args) {
+    CoreProcess::CoreProcess(const QString &core_path, const QString &socketName, bool debugMode)
+        : m_socketName(socketName), m_debugMode(debugMode) {
         program = core_path;
-        arguments = args;
 
         connect(this, &QProcess::readyReadStandardOutput, this, [&]() {
             auto log = readAllStandardOutput();
-            if (!Configs::dataStore->core_running) {
-                if (log.contains("Core listening at")) {
-                    // The core really started
-                    Configs::dataStore->core_running = true;
-                    MW_dialog_message("ExternalProcess", "CoreStarted," + Int2String(start_profile_when_core_is_up));
-                    start_profile_when_core_is_up = -1;
-                } else if (log.contains("failed to serve")) {
-                    // The core failed to start
-                    kill();
-                }
-            }
             if (log.contains("Extra process exited unexpectedly"))
             {
                 MW_show_log("Extra Core exited, stopping profile...");
                 MW_dialog_message("ExternalProcess", "Crashed");
             }
-            if (logCounter.fetchAndAddRelaxed(log.count("\n")) > Configs::dataStore->max_log_line) return;
+            if (logCounter.fetchAndAddRelaxed(log.count("\n")) > Configs::dataManager->settingsRepo->max_log_line) return;
             MW_show_log(log);
         });
         connect(this, &QProcess::readyReadStandardError, this, [&]() {
@@ -53,19 +44,17 @@ namespace Configs_sys {
         });
         connect(this, &QProcess::stateChanged, this, [&](ProcessState state) {
             if (state == NotRunning) {
-                Configs::dataStore->core_running = false;
+                Configs::dataManager->settingsRepo->core_running = false;
                 qDebug() << "Core stated changed to not running";
             }
 
-            if (!Configs::dataStore->prepare_exit && state == NotRunning) {
+            if (!Configs::dataManager->settingsRepo->prepare_exit && state == NotRunning) {
                 if (failed_to_start) return; // no retry
                 if (restarting) return;
 
                 MW_show_log("[Fatal] " + QObject::tr("Core exited, cleaning up..."));
-                runOnUiThread([=, this]
-                {
-                    GetMainWindow()->profile_stop(true, true);
-                }, true);
+
+                GetMainWindow()->profile_stop(true, true);
 
                 // Retry rate limit
                 if (coreRestartTimer.isValid()) {
@@ -79,7 +68,7 @@ namespace Configs_sys {
                 }
 
                 // Restart
-                start_profile_when_core_is_up = Configs::dataStore->started_id;
+                start_profile_when_core_is_up = Configs::dataManager->settingsRepo->started_id;
                 MW_show_log("[Warn] " + QObject::tr("Restarting the core ..."));
                 setTimeout([=,this] { Restart(); }, this, 200);
             }
@@ -90,8 +79,11 @@ namespace Configs_sys {
         if (started) return;
         started = true;
 
-        setEnvironment(QProcessEnvironment::systemEnvironment().toStringList());
-        start(program, arguments);
+        auto env = QProcessEnvironment::systemEnvironment();
+        env.insert("THRONE_CORE_SOCKET", m_socketName);
+        if (m_debugMode) env.insert("THRONE_CORE_DEBUG", "1");
+        setProcessEnvironment(env);
+        start(program, {});
     }
 
     void CoreProcess::Restart() {

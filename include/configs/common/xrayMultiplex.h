@@ -9,13 +9,6 @@ namespace Configs {
         int concurrency = 0;
         int xudpConcurrency = 16;
 
-        xrayMultiplex() {
-            _add(new configItem("enabled", &enabled, boolean));
-            _add(new configItem("useDefault", &useDefault, boolean));
-            _add(new configItem("concurrency", &concurrency, integer));
-            _add(new configItem("xudpConcurrency", &xudpConcurrency, integer));
-        }
-
         int getMuxState() {
             if (enabled) return 1;
             if (!useDefault) return 2;
@@ -34,6 +27,7 @@ namespace Configs {
 
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;

@@ -11,15 +11,9 @@ namespace Configs
         bool tcp_fast_open = false;
         bool tcp_multi_path = false;
         bool udp_fragment = false;
-
-        DialFields()
-        {
-            _add(new configItem("reuse_addr", &reuse_addr, itemType::boolean));
-            _add(new configItem("connect_timeout", &connect_timeout, string));
-            _add(new configItem("tcp_fast_open", &tcp_fast_open, itemType::boolean));
-            _add(new configItem("tcp_multi_path", &tcp_multi_path, itemType::boolean));
-            _add(new configItem("udp_fragment", &udp_fragment, itemType::boolean));
-        }
+        QString bind_interface;
+        QString inet4_bind_address;
+        QString inet6_bind_address;
 
         // baseConfig overrides
         bool ParseFromLink(const QString& link) override;

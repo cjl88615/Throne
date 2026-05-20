@@ -1,8 +1,10 @@
 #include <QThread>
-#include <libcore.pb.h>
+#include <core/server/gen/libcore.pb.h>
 #include <include/api/RPC.h>
 #include "include/ui/mainwindow_interface.h"
 #include <include/stats/connections/connectionLister.hpp>
+
+
 
 namespace Stats
 {
@@ -28,7 +30,7 @@ namespace Stats
             if (stop) return;
             QThread::msleep(1000);
 
-            if (suspend || !Configs::dataStore->enable_stats) continue;
+            if (suspend || !Configs::dataManager->settingsRepo->enable_stats) continue;
 
             mu.lock();
             update();
@@ -38,12 +40,7 @@ namespace Stats
 
     void ConnectionLister::update()
     {
-        bool ok;
-        libcore::ListConnectionsResp resp = API::defaultClient->ListConnections(&ok);
-        if (!ok)
-        {
-            return;
-        }
+        libcore::ListConnectionsResp resp = API::defaultClient->ListConnections();
 
         QMap<QString, ConnectionMetadata> toUpdate;
         QMap<QString, ConnectionMetadata> toAdd;

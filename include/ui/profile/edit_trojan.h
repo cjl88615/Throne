@@ -1,6 +1,4 @@
-#ifndef EDIT_TROJAN_H
-#define EDIT_TROJAN_H
-
+#pragma once
 #include <QWidget>
 #include "profile_editor.h"
 #include "ui_edit_trojan.h"
@@ -17,13 +15,11 @@ public:
 
     ~EditTrojan() override;
 
-    void onStart(std::shared_ptr<Configs::ProxyEntity> _ent) override;
+    void onStart(std::shared_ptr<Configs::Profile> _ent) override;
 
     bool onEnd() override;
 
 private:
     Ui::EditTrojan *ui;
-    std::shared_ptr<Configs::ProxyEntity> ent;
+    std::shared_ptr<Configs::Profile> ent;
 };
-
-#endif // EDIT_TROJAN_H

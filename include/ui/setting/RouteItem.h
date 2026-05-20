@@ -3,29 +3,25 @@
 #include <QWidget>
 #include <QListWidgetItem>
 #include <QDialog>
-#include <QStringListModel>
+#include <QEvent>
 #include <QShortcut>
 
-#include "include/dataStore/RouteEntity.h"
 #include "3rdparty/qv2ray/v2/ui/QvAutoCompleteTextEdit.hpp"
 #include "ui_RouteItem.h"
+#include "include/database/entities/RouteProfile.h"
 
-QT_BEGIN_NAMESPACE
-namespace Ui {
-    class RouteItem;
-}
-QT_END_NAMESPACE
+class QListWidget;
 
 class RouteItem : public QDialog {
     Q_OBJECT
 
 public:
-    explicit RouteItem(QWidget *parent = nullptr, const std::shared_ptr<Configs::RoutingChain>& routeChain = nullptr);
+    explicit RouteItem(QWidget *parent = nullptr, const std::shared_ptr<Configs::RouteProfile>& routeChain = nullptr);
     ~RouteItem() override;
 
-    std::shared_ptr<Configs::RoutingChain> chain;
+    std::shared_ptr<Configs::RouteProfile> chain;
 signals:
-    void settingsChanged(std::shared_ptr<Configs::RoutingChain> routingChain);
+    void settingsChanged(std::shared_ptr<Configs::RouteProfile> routingChain);
 
 private:
     Ui::RouteItem *ui;
@@ -34,12 +30,6 @@ private:
     int lastNum = 0;
 
     QStringList geo_items;
-
-    AutoCompleteTextEdit* rule_set_editor;
-
-    QStringList current_helper_items;
-
-    QStringListModel* helperModel;
 
     QShortcut* deleteShortcut;
 
@@ -53,19 +43,35 @@ private:
 
     AutoCompleteTextEdit* simpleProxy;
 
-    [[nodiscard]] int getIndexOf(const QString& name) const;
+    QListWidget* ruleAttrPlusList = nullptr;
 
-    void showSelectItem(const QStringList& items, const QString& currentItem);
+    void ensurePlusTabBuiltOnce();
 
-    void showTextEnterItem(const QStringList& items, bool isRuleSet);
+    void removeAllAttributeTabsExceptPlus();
 
-    void setDefaultRuleData(const QString& currentData);
+    void syncPlusListCheckStatesFromRule();
+
+    void persistCurrentRuleAttrTabLabel();
+
+    void applyStoredRuleAttrTabSelection();
+
+    void syncRuleActionCombo();
+
+    void rebuildRuleAttributeTabs();
+
+    [[nodiscard]] QWidget* makeAttributeEditorPage(const QString& attr);
 
     void updateRuleSection();
 
     void updateRulePreview();
 
     void updateRouteItemsView();
+
+    void applyAttributeVisibilityChange(const QString& attr, bool visible);
+
+protected:
+    bool eventFilter(QObject* watched, QEvent* event) override;
+
 private slots:
     void accept() override;
 

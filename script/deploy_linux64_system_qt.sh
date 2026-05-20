@@ -1,30 +1,22 @@
 #!/bin/bash
 set -e
 
-if [[ $(uname -m) == 'aarch64' || $(uname -m) == 'arm64' ]]; then
-  ARCH="arm64"
-else
-  ARCH="amd64"
-fi
-
-source script/env_deploy.sh
-DEST=$DEPLOYMENT/linux-system-qt-$ARCH
 rm -rf $DEST
 mkdir -p $DEST
 
 #### copy binary ####
-cp $BUILD/Throne $DEST
+cp $GITHUB_WORKSPACE/build/Throne $DEST
 
 #### copy Throne.png ####
-cp ./res/public/Throne.png $DEST
+cp $GITHUB_WORKSPACE/res/public/Throne.png $DEST
 
 #### copy Core ####
 cd download-artifact
-cd *linux-$ARCH
+cd *${DEST_SUFFIX%-system-qt}
 tar xvzf artifacts.tgz -C ../../
 cd ../..
-cp deployment/linux-$ARCH/Core $DEST
-rm -rf deployment/linux-$ARCH
+cp deployment/${DEST_SUFFIX%-system-qt}/ThroneCore $DEST
+rm -rf deployment/${DEST_SUFFIX%-system-qt}
 
 # handle debug info
 objcopy --only-keep-debug $DEST/Throne $DEST/Throne.debug

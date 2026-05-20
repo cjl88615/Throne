@@ -1,10 +1,11 @@
 #include "include/ui/profile/edit_advanced.h"
 
 #include <QInputDialog>
+#include <QNetworkInterface>
+#include <QAbstractSocket>
+#include "include/database/DatabaseManager.h"
 
-#include "include/dataStore/ProxyEntity.hpp"
-
-EditAdvanced::EditAdvanced(QWidget *parent, const std::shared_ptr<Configs::ProxyEntity> &_ent)
+EditAdvanced::EditAdvanced(QWidget *parent, const std::shared_ptr<Configs::Profile> &_ent)
     : QDialog(parent)
     , ui(new Ui::EditAdvanced)
 {
@@ -17,17 +18,40 @@ EditAdvanced::EditAdvanced(QWidget *parent, const std::shared_ptr<Configs::Proxy
     ui->tcp_multipath->setChecked(dialFieldsObj->tcp_multi_path);
     ui->connect_timeout->setText(dialFieldsObj->connect_timeout);
 
+    // Collect system network interfaces and addresses
+    for (const auto& ifc : QNetworkInterface::allInterfaces())
+        m_systemInterfaces << ifc.humanReadableName();
+    for (const auto& addr : QNetworkInterface::allAddresses()) {
+        if (addr.protocol() == QAbstractSocket::IPv4Protocol)
+            m_systemIpv4Addresses << addr.toString();
+        else if (addr.protocol() == QAbstractSocket::IPv6Protocol)
+            m_systemIpv6Addresses << addr.toString();
+    }
+
+    auto populateBindCombo = [](QComboBox* combo, const QStringList& systemItems,
+                                const QStringList& history, const QString& current) {
+        combo->addItem("");
+        combo->addItems(systemItems);
+        for (const auto& h : history) {
+            if (!systemItems.contains(h))
+                combo->addItem(h);
+        }
+        combo->setCurrentText(current);
+    };
+
+    auto* repo = Configs::dataManager->settingsRepo.get();
+    populateBindCombo(ui->bind_interface,    m_systemInterfaces,    repo->dial_bind_interface_history,    dialFieldsObj->bind_interface);
+    populateBindCombo(ui->inet4_bind_address, m_systemIpv4Addresses, repo->dial_inet4_bind_address_history, dialFieldsObj->inet4_bind_address);
+    populateBindCombo(ui->inet6_bind_address, m_systemIpv6Addresses, repo->dial_inet6_bind_address_history, dialFieldsObj->inet6_bind_address);
+
     if (ent->outbound->HasTLS()) {
         auto tlsObj = ent->outbound->GetTLS();
         ui->disable_sni->setChecked(tlsObj->disable_sni);
         ui->min_version->setText(tlsObj->min_version);
         ui->max_version->setText(tlsObj->max_version);
         ui->enable_ech->setChecked(tlsObj->ech->enabled);
+        ui->ech_server_name->setText(tlsObj->ech->serverName);
 
-        // TODO enable when sing-box version is >= 1.13
-        ui->cert_sha256->setEnabled(false);
-        ui->client_cert->setEnabled(false);
-        ui->client_key->setEnabled(false);
         if (!tlsObj->ech->config.isEmpty()) {
             ui->ech_config->setText("Already set");
             CACHE.echConfig = tlsObj->ech->config;
@@ -62,6 +86,22 @@ void EditAdvanced::accept() {
     dialFieldsObj->udp_fragment = ui->udp_fragment->isChecked();
     dialFieldsObj->tcp_multi_path = ui->tcp_multipath->isChecked();
     dialFieldsObj->connect_timeout = ui->connect_timeout->text();
+    dialFieldsObj->bind_interface = ui->bind_interface->currentText();
+    dialFieldsObj->inet4_bind_address = ui->inet4_bind_address->currentText();
+    dialFieldsObj->inet6_bind_address = ui->inet6_bind_address->currentText();
+
+    auto updateHistory = [](QStringList& history, const QStringList& systemItems, const QString& value) {
+        if (value.isEmpty() || systemItems.contains(value)) return;
+        history.removeAll(value);
+        history.prepend(value);
+        if (history.size() > 5) history = history.mid(0, 5);
+    };
+
+    auto* repo = Configs::dataManager->settingsRepo.get();
+    updateHistory(repo->dial_bind_interface_history,    m_systemInterfaces,    dialFieldsObj->bind_interface);
+    updateHistory(repo->dial_inet4_bind_address_history, m_systemIpv4Addresses, dialFieldsObj->inet4_bind_address);
+    updateHistory(repo->dial_inet6_bind_address_history, m_systemIpv6Addresses, dialFieldsObj->inet6_bind_address);
+    repo->Save();
 
     if (ent->outbound->HasTLS()) {
         auto tlsObj = ent->outbound->GetTLS();
@@ -69,6 +109,7 @@ void EditAdvanced::accept() {
         tlsObj->min_version = ui->min_version->text();
         tlsObj->max_version = ui->max_version->text();
         tlsObj->ech->enabled = ui->enable_ech->isChecked();
+        tlsObj->ech->serverName = ui->ech_server_name->text();
         tlsObj->ech->config = CACHE.echConfig;
         tlsObj->client_certificate = CACHE.clientCert;
         tlsObj->client_key = CACHE.clientKey;

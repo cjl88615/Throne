@@ -4,7 +4,7 @@ Qt based Desktop cross-platform GUI proxy utility, empowered by [Sing-box](https
 
 Supports Windows 11/10/8/7 / Linux / MacOS out of the box.
 
-<img width="1002" height="789" alt="image" src="https://github.com/user-attachments/assets/45a23c6c-b716-4acf-8281-63d35cac8457" />
+<img width="1123" height="799" alt="image" src="https://github.com/user-attachments/assets/a0beedf1-f003-46fa-80a3-bb63002b543f" />
 
 ### Note on MacOS releases
 Apple platforms have a very strict security policy and since Throne does not have a signed certificate, you will have to remove the quarantine using `xattr -d com.apple.quarantine /path/to/throne.app`. Also to get the built-in privilege escalation to work, `Terminal` should have the `Full Disk` access.
@@ -12,11 +12,6 @@ Apple platforms have a very strict security policy and since Throne does not hav
 ### GitHub Releases (Portable ZIP)
 
 [![GitHub All Releases](https://img.shields.io/github/downloads/Mahdi-zarei/nekoray/total?label=downloads-total&logo=github&style=flat-square)](https://github.com/throneproj/Throne/releases)
-
-### AUR Packages
-- [source](https://aur.archlinux.org/packages/throne)
-- [git](https://aur.archlinux.org/packages/throne-git)
-- [bin](https://aur.archlinux.org/packages/throne-bin)
 
 ### RPM repository
 [Throne RPM repository](https://parhelia512.github.io/) for Fedora/RHEL and openSUSE/SLE.
@@ -33,6 +28,10 @@ Apple platforms have a very strict security policy and since Throne does not hav
 - Hysteria
 - Hysteria2
 - AnyTLS
+- NaïveProxy
+- Juicity
+- TrustTunnel
+- ShadowTLS
 - Wireguard
 - SSH
 - Custom Outbound
@@ -42,17 +41,19 @@ Apple platforms have a very strict security policy and since Throne does not hav
 
 ## Subscription Formats
 
-Various formats are supported, including share links, JSON array of outbounds and v2rayN link format as well as limited support for Shadowsocks and Clash formats.
+Various formats are supported, including share links, various JSON representation of Sing-box configs, and v2rayN link format as well as limited support for Shadowsocks and Clash formats.
 
 ## Credits
 
 - [SagerNet/sing-box](https://github.com/SagerNet/sing-box)
+- [XTLS/Xray-core](https://github.com/xtls/xray-core)
 - [Qv2ray](https://github.com/Qv2ray/Qv2ray)
 - [Qt](https://www.qt.io/)
 - [simple-protobuf](https://github.com/tonda-kriz/simple-protobuf)
+- [fkYAML](https://github.com/fktn-k/fkYAML)
 - [quirc](https://github.com/dlbeer/quirc)
 - [QHotkey](https://github.com/Skycoder42/QHotkey)
-- [clash2singbox](https://github.com/xmdhs/clash2singbox)
+- [srombauts/sqlitecpp](https://github.com/srombauts/sqlitecpp)
 
 ## FAQ
 **How does this project differ from the original Nekoray?** <br/>
@@ -73,3 +74,6 @@ Solution:
 
 **Where are the downloadable route profiles/rulesets coming from?**<br/>
 They are located at the [routeprofiles](https://github.com/throneproj/routeprofiles) repository.
+
+**How does "Throne-\<version\>-debian-system-qt-x64.deb" differ from "Throne-\<version\>-debian-x64.deb" and why is the latter 3 times heavier then the former?**<br/>
+The first one does not pack the Qt libraries and relies on those installed on the host. The second one packs everything needed with itself, thus being heavier. The reason the first one exists is that on legacy systems provided Qt libraries use unsupported system features. If a graphical interface fails to load for your system, you may try to download the system-qt version and install fitting Qt libraries from your package manager or compile them from source.

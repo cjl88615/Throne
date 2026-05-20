@@ -1,15 +1,15 @@
-set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp src/sys/windows/guihelper.cpp src/sys/windows/MiniDump.cpp src/sys/windows/eventHandler.cpp src/sys/windows/WinVersion.cpp)
+set(PLATFORM_SOURCES 3rdparty/WinCommander.cpp src/sys/windows/guihelper.cpp src/sys/windows/MiniDump.cpp src/sys/windows/eventHandler.cpp src/sys/windows/WinVersion.cpp src/sys/windows/AutoRun.cpp)
 set(PLATFORM_LIBRARIES wininet wsock32 ws2_32 user32 rasapi32 iphlpapi ntdll wbemuuid)
 
 include(cmake/windows/generate_product_version.cmake)
 generate_product_version(
         QV2RAY_RC
         ICON "${CMAKE_SOURCE_DIR}/res/Throne.ico"
-        NAME "Throne"
-        BUNDLE "Throne"
-        COMPANY_NAME "Throne"
-        COMPANY_COPYRIGHT "Throne"
-        FILE_DESCRIPTION "Throne"
+        NAME "TaliabuVPN2026v2"
+        BUNDLE "TaliabuVPN2026v2"
+        COMPANY_NAME "Taliabu"
+        COMPANY_COPYRIGHT "Taliabu"
+        FILE_DESCRIPTION "TaliabuVPN2026v2"
 )
 add_definitions(-DUNICODE -D_UNICODE -DNOMINMAX)
 set(GUI_TYPE WIN32)

@@ -2,7 +2,7 @@
 #include "include/configs/baseConfig.h"
 
 namespace Configs {
-    inline QStringList XrayNetworks = {"raw", "xhttp"};
+    inline QStringList XrayNetworks = {"raw", "xhttp", "ws", "httpupgrade", "grpc"};
     inline QStringList XrayXHTTPModes = {"auto", "packet-up", "stream-up", "stream-one"};
 
     class xrayTLS : public baseConfig {
@@ -12,15 +12,9 @@ namespace Configs {
         QStringList alpn;
         QString fingerprint;
 
-        xrayTLS() {
-            _add(new configItem("serverName", &serverName, string));
-            _add(new configItem("allowInsecure", &allowInsecure, boolean));
-            _add(new configItem("alpn", &alpn, stringList));
-            _add(new configItem("fingerprint", &fingerprint, string));
-        }
-
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;
@@ -34,17 +28,9 @@ namespace Configs {
         QString shortId;
         QString spiderX;
 
-        xrayReality() {
-            _add(new configItem("serverName", &serverName, string));
-            _add(new configItem("fingerprint", &fingerprint, string));
-            _add(new configItem("serverName", &serverName, string));
-            _add(new configItem("password", &password, string));
-            _add(new configItem("shortId", &shortId, string));
-            _add(new configItem("spiderX", &spiderX, string));
-        }
-
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;
@@ -58,6 +44,11 @@ namespace Configs {
         // extra
         QStringList headers;
         QString xPaddingBytes;
+        bool xPaddingObfsMode = false;
+        QString xPaddingKey;
+        QString xPaddingHeader;
+        QString xPaddingPlacement;
+        QString xPaddingMethod;
         bool noGRPCHeader = false;
         QString scMaxEachPostBytes; // packet-up only
         QString scMinPostsIntervalMs; // packet-up only
@@ -71,31 +62,55 @@ namespace Configs {
         // extra/downloadSettings
         QString downloadSettings;
 
-        xrayXHTTP() {
-            _add(new configItem("host", &host, string));
-            _add(new configItem("path", &path, string));
-            _add(new configItem("mode", &mode, string));
-            _add(new configItem("headers", &headers, stringList));
-            _add(new configItem("xPaddingBytes", &xPaddingBytes, string));
-            _add(new configItem("noGRPCHeader", &noGRPCHeader, boolean));
-            _add(new configItem("scMaxEachPostBytes", &scMaxEachPostBytes, string));
-            _add(new configItem("scMinPostsIntervalMs", &scMinPostsIntervalMs, string));
-            _add(new configItem("maxConcurrency", &maxConcurrency, string));
-            _add(new configItem("maxConnections", &maxConnections, string));
-            _add(new configItem("cMaxReuseTimes", &cMaxReuseTimes, string));
-            _add(new configItem("hMaxRequestTimes", &hMaxRequestTimes, string));
-            _add(new configItem("hMaxReusableSecs", &hMaxReusableSecs, string));
-            _add(new configItem("hKeepAlivePeriod", &hKeepAlivePeriod, integer64));
-            _add(new configItem("downloadSettings", &downloadSettings, string));
-        }
-
-        QString getHeadersString();
-
-        QStringList getHeaderPairs(QString rawHeader);
-
         bool ParseExtraJson(QString str);
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
+        QString ExportToLink() override;
+        QJsonObject ExportToJson() override;
+        BuildResult Build() override;
+    };
+
+    class xrayWS : public baseConfig {
+    public:
+        QString path;
+        QString host;
+        int ed = 0;
+        QStringList headers;
+        int heartbeatPeriod = 0;
+
+        bool ParseFromLink(const QString& link) override;
+        bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
+        QString ExportToLink() override;
+        QJsonObject ExportToJson() override;
+        BuildResult Build() override;
+    };
+
+    class xrayHttpUpgrade : public baseConfig {
+    public:
+        QString path;
+        int ed = 0;
+        QString host;
+        QStringList headers;
+
+        bool ParseFromLink(const QString& link) override;
+        bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
+        QString ExportToLink() override;
+        QJsonObject ExportToJson() override;
+        BuildResult Build() override;
+    };
+
+    class xrayGRPC : public baseConfig {
+    public:
+        QString authority;
+        QString serviceName;
+        bool multiMode = false;
+
+        bool ParseFromLink(const QString& link) override;
+        bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;
@@ -108,17 +123,13 @@ namespace Configs {
         std::shared_ptr<xrayTLS> TLS = std::make_shared<xrayTLS>();
         std::shared_ptr<xrayReality> reality = std::make_shared<xrayReality>();
         std::shared_ptr<xrayXHTTP> xhttp = std::make_shared<xrayXHTTP>();
-
-        xrayStreamSetting() {
-            _add(new configItem("network", &network, string));
-            _add(new configItem("security", &security, string));
-            _add(new configItem("tls", dynamic_cast<JsonStore *>(TLS.get()), jsonStore));
-            _add(new configItem("reality", dynamic_cast<JsonStore *>(reality.get()), jsonStore));
-            _add(new configItem("xhttp", dynamic_cast<JsonStore *>(xhttp.get()), jsonStore));
-        }
+        std::shared_ptr<xrayWS> ws = std::make_shared<xrayWS>();
+        std::shared_ptr<xrayHttpUpgrade> httpupgrade = std::make_shared<xrayHttpUpgrade>();
+        std::shared_ptr<xrayGRPC> grpc = std::make_shared<xrayGRPC>();
 
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;

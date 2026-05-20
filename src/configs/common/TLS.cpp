@@ -5,12 +5,14 @@
 
 #include "include/configs/common/utils.h"
 
+
+
 namespace Configs {
     bool uTLS::ParseFromLink(const QString& link)
     {
         auto url = QUrl(link);
         if (!url.isValid() && !url.errorString().startsWith("Invalid port")) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         // handle the common format
         if (query.hasQueryItem("fp")) fingerPrint = query.queryItemValue("fp");
@@ -22,6 +24,13 @@ namespace Configs {
         if (object.isEmpty()) return false;
         if (object.contains("enabled")) enabled = object["enabled"].toBool();
         if (object.contains("fingerprint")) fingerPrint = object["fingerprint"].toString();
+        return true;
+    }
+    bool uTLS::ParseFromClash(const clash::Proxies& object)
+    {
+        if (object.client_fingerprint.empty()) return false;
+        enabled = true;
+        fingerPrint = QString::fromStdString(object.client_fingerprint);
         return true;
     }
     QString uTLS::ExportToLink()
@@ -43,9 +52,9 @@ namespace Configs {
     {
         if (!supported) return {};
         auto obj = ExportToJson();
-        if ((obj.isEmpty() || obj["enabled"].toBool() == false || fingerPrint.isEmpty()) && !dataStore->utlsFingerprint.isEmpty()) {
+        if ((obj.isEmpty() || obj["enabled"].toBool() == false || fingerPrint.isEmpty()) && !Configs::dataManager->settingsRepo->utlsFingerprint.isEmpty()) {
             obj["enabled"] = true;
-            obj["fingerprint"] = dataStore->utlsFingerprint;
+            obj["fingerprint"] = Configs::dataManager->settingsRepo->utlsFingerprint;
         }
         return {obj, ""};
     }
@@ -54,11 +63,12 @@ namespace Configs {
     {
         auto url = QUrl(link);
         if (!url.isValid() && !url.errorString().startsWith("Invalid port")) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         if (query.hasQueryItem("ech_enabled")) enabled = query.queryItemValue("ech_enabled") == "true";
         if (query.hasQueryItem("ech_config")) config = query.queryItemValue("ech_config").split(",");
         if (query.hasQueryItem("ech_config_path")) config_path = query.queryItemValue("ech_config_path");
+        if (query.hasQueryItem("ech_server_name")) serverName = query.queryItemValue("ech_server_name");
         return true;
     }
     bool ECH::ParseFromJson(const QJsonObject& object)
@@ -69,6 +79,7 @@ namespace Configs {
             config = QJsonArray2QListString(object["config"].toArray());
         }
         if (object.contains("config_path")) config_path = object["config_path"].toString();
+        if (object.contains("query_server_name")) serverName = object["query_server_name"].toString();
         return true;
     }
     QString ECH::ExportToLink()
@@ -78,6 +89,7 @@ namespace Configs {
         query.addQueryItem("ech_enabled", "true");
         if (!config.isEmpty()) query.addQueryItem("ech_config", config.join(","));
         if (!config_path.isEmpty()) query.addQueryItem("ech_config_path", config_path);
+        if (!serverName.isEmpty()) query.addQueryItem("ech_server_name", serverName);
         return query.toString();
     }
     QJsonObject ECH::ExportToJson()
@@ -89,6 +101,7 @@ namespace Configs {
             object["config"] = QListStr2QJsonArray(config);
         }
         if (!config_path.isEmpty()) object["config_path"] = config_path;
+        if (!serverName.isEmpty()) object["query_server_name"] = serverName;
         return object;
     }
     BuildResult ECH::Build()
@@ -100,7 +113,7 @@ namespace Configs {
     {
         auto url = QUrl(link);
         if (!url.isValid() && !url.errorString().startsWith("Invalid port")) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         // handle the common format
         if (query.hasQueryItem("pbk"))
@@ -117,6 +130,14 @@ namespace Configs {
         if (object.contains("enabled")) enabled = object["enabled"].toBool();
         if (object.contains("public_key")) public_key = object["public_key"].toString();
         if (object.contains("short_id")) short_id = object["short_id"].toString();
+        return true;
+    }
+    bool Reality::ParseFromClash(const clash::Proxies& object)
+    {
+        if (object.reality_opts.public_key.empty()) return false;
+        enabled = true;
+        public_key = QString::fromStdString(object.reality_opts.public_key);
+        short_id = QString::fromStdString(object.reality_opts.short_id);
         return true;
     }
     QString Reality::ExportToLink()
@@ -151,7 +172,7 @@ namespace Configs {
     {
         auto url = QUrl(link);
         if (!url.isValid() && !url.errorString().startsWith("Invalid port")) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         if (query.hasQueryItem("security")) enabled = query.queryItemValue("security")
         .replace("reality", "tls")
@@ -166,7 +187,7 @@ namespace Configs {
         if (query.hasQueryItem("allowInsecure")) insecure = query.queryItemValue("allowInsecure").replace("1", "true") == "true";
         if (query.hasQueryItem("allow_insecure")) insecure = query.queryItemValue("allow_insecure").replace("1", "true") == "true";
         if (query.hasQueryItem("insecure")) insecure = query.queryItemValue("insecure").replace("1", "true") == "true";
-        if (query.hasQueryItem("alpn")) alpn = query.queryItemValue("alpn").split(",");
+        if (query.hasQueryItem("alpn")) alpn = query.queryItemValue("alpn", QUrl::FullyDecoded).split(",");
         if (query.hasQueryItem("tls_min_version")) min_version = query.queryItemValue("tls_min_version");
         if (query.hasQueryItem("tls_max_version")) max_version = query.queryItemValue("tls_max_version");
         if (query.hasQueryItem("tls_cipher_suites")) cipher_suites = query.queryItemValue("tls_cipher_suites").split(",");
@@ -230,6 +251,24 @@ namespace Configs {
         if (object.contains("ech")) ech->ParseFromJson(object["ech"].toObject());
         if (object.contains("utls")) utls->ParseFromJson(object["utls"].toObject());
         if (object.contains("reality")) reality->ParseFromJson(object["reality"].toObject());
+        return true;
+    }
+    bool TLS::ParseFromClash(const clash::Proxies& object)
+    {
+        enabled = object.tls;
+        if (!object.servername.empty()) {
+            server_name = QString::fromStdString(object.servername);
+        } else if (!object.sni.empty()) {
+            server_name = QString::fromStdString(object.sni);
+        } else {
+            server_name = QString::fromStdString(object.server);
+        }
+        insecure = object.skip_cert_verify;
+        for (const auto& s : object.alpn) {
+            alpn.append(QString::fromStdString(s));
+        }
+        utls->ParseFromClash(object);
+        reality->ParseFromClash(object);
         return true;
     }
     QString TLS::ExportToLink()

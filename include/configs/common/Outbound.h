@@ -11,6 +11,8 @@
 
 namespace Configs
 {
+    inline QStringList vPacketEncoding = {"", "packetaddr", "xudp"};
+
     class outbound : public baseConfig
     {
     public:
@@ -19,14 +21,6 @@ namespace Configs
         int server_port = 0;
         bool invalid = false;
         std::shared_ptr<DialFields> dialFields = std::make_shared<DialFields>();
-
-        outbound()
-        {
-            _add(new configItem("name", &name, string));
-            _add(new configItem("server", &server, string));
-            _add(new configItem("server_port", &server_port, integer));
-            _add(new configItem("dial_fields", dynamic_cast<JsonStore *>(dialFields.get()), jsonStore));
-        }
 
         void ResolveDomainToIP(const std::function<void()> &onFinished) {
             bool noResolve = false;
@@ -82,6 +76,10 @@ namespace Configs
 
         virtual bool IsXray() { return false; }
 
+        virtual bool IsExtraCore() { return false; }
+
+        virtual bool IsXrayFullConfig() { return false; }
+
         virtual bool HasMux() { return false; }
 
         virtual bool HasTransport() { return false; }
@@ -104,8 +102,11 @@ namespace Configs
 
         virtual BuildResult BuildXray() { return {}; }
 
-        QString ExportJsonLink() {
+        QString ExportJsonLink(bool stripMetadata = false) {
             auto json = ExportToJson();
+            if (stripMetadata) {
+                json.remove("tag");
+            }
             QUrl url;
             url.setScheme("json");
             url.setHost("throne");
@@ -118,6 +119,7 @@ namespace Configs
         // baseConfig overrides
         bool ParseFromLink(const QString& link) override;
         bool ParseFromJson(const QJsonObject& object) override;
+        bool ParseFromClash(const clash::Proxies& object) override;
         QString ExportToLink() override;
         QJsonObject ExportToJson() override;
         BuildResult Build() override;

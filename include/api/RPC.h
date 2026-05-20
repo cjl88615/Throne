@@ -1,15 +1,22 @@
 #pragma once
 
 #ifndef Q_MOC_RUN
-#include "libcore.pb.h"
+#include <core/server/gen/libcore.pb.h>
 #endif
 #include <QString>
-#include "3rdparty/protorpc/rpc_client.h"
+
+class QLocalSocket;
 
 namespace API {
     class Client {
     public:
-        explicit Client(std::function<void(const QString &)> onError, const QString &host, int port);
+        Client();
+
+        ~Client();
+
+        // Adopt a freshly connected socket, replacing any previous
+        // connection. The Client itself is long-lived and never recreated.
+        void Reconnect(QLocalSocket *socket);
 
         // QString returns is error string
 
@@ -25,9 +32,13 @@ namespace API {
 
         libcore::QueryURLTestResponse QueryURLTest(bool *rpcOK);
 
+        libcore::IPTestResp IPTest(bool *rpcOK, const libcore::IPTestRequest &request);
+
+        libcore::QueryIPTestResponse QueryIPTest(bool *rpcOK);
+
         QString SetSystemDNS(bool *rpcOK, bool clear) const;
 
-        libcore::ListConnectionsResp ListConnections(bool *rpcOK) const;
+        [[nodiscard]] libcore::ListConnectionsResp ListConnections() const;
 
         QString CheckConfig(bool *rpcOK, const QString& config) const;
 
@@ -39,11 +50,11 @@ namespace API {
 
         libcore::QueryCountryTestResponse QueryCountryTestResults(bool *rpcOK);
 
-        QString Clash2Singbox(bool *rpcOK, const QString& config) const;
+        libcore::GenWgKeyPairResponse GenWgKeyPair(bool *rpcOK);
 
     private:
-        std::function<std::unique_ptr<protorpc::Client>()> make_rpc_client;
-        std::function<void(const QString &)> onError;
+        class LocalSocketChannel;
+        std::unique_ptr<LocalSocketChannel> channel;
     };
 
     inline Client *defaultClient;

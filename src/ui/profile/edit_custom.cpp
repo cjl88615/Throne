@@ -1,7 +1,6 @@
 #include "include/ui/profile/edit_custom.h"
 
 #include "3rdparty/qv2ray/v2/ui/widgets/editors/w_JsonEditor.hpp"
-#include "include/dataStore/Database.hpp"
 
 #include <QMessageBox>
 #include <QClipboard>
@@ -21,23 +20,38 @@ EditCustom::~EditCustom() {
     delete ui;
 }
 
-void EditCustom::onStart(std::shared_ptr<Configs::ProxyEntity> _ent) {
+void EditCustom::onStart(std::shared_ptr<Configs::Profile> _ent) {
     this->ent = _ent;
     auto outbound = this->ent->Custom();
 
-    if (preset_core == "outbound") {
+    if (preset_core == Configs::Custom::CustomOutbound) {
         preset_command = preset_config = "";
         ui->config_simple->setPlaceholderText(
             "{\n"
             "    \"type\": \"socks\",\n"
             "    // ...\n"
             "}");
-    } else if (preset_core == "fullconfig") {
+    } else if (preset_core == Configs::Custom::CustomFullConfig) {
         preset_command = preset_config = "";
         ui->config_simple->setPlaceholderText(
             "{\n"
             "    \"inbounds\": [],\n"
             "    \"outbounds\": []\n"
+            "}");
+    } else if (preset_core == Configs::Custom::CustomXrayOutbound) {
+        preset_command = preset_config = "";
+        ui->config_simple->setPlaceholderText(
+            "{\n"
+            "    \"protocol\": \"vless\",\n"
+            "    \"settings\": { /* ... */ }\n"
+            "}");
+    } else if (preset_core == Configs::Custom::CustomXrayFullConfig) {
+        preset_command = preset_config = "";
+        ui->config_simple->setPlaceholderText(
+            "{\n"
+            "    \"inbounds\": [],\n"
+            "    \"outbounds\": [],\n"
+            "    \"routing\": {}\n"
             "}");
     }
 
@@ -45,8 +59,12 @@ void EditCustom::onStart(std::shared_ptr<Configs::ProxyEntity> _ent) {
     ui->config_simple->setPlainText(outbound->config);
 
     // custom internal
-    if (preset_core == "outbound") {
+    if (preset_core == Configs::Custom::CustomOutbound) {
         ui->core_l->setText(tr("Outbound JSON, please read the documentation."));
+    } else if (preset_core == Configs::Custom::CustomXrayOutbound) {
+        ui->core_l->setText(tr("Xray outbound JSON, please read the Xray documentation."));
+    } else if (preset_core == Configs::Custom::CustomXrayFullConfig) {
+        ui->core_l->setText(tr("Xray full config (Throne adds a socks inbound and uses sing-box for tun/routing)."));
     } else {
         ui->core_l->setText(tr("Please fill the complete config."));
     }

@@ -3,32 +3,37 @@
 #include <QMainWindow>
 #include <include/global/HTTPRequestHelper.hpp>
 #ifndef Q_MOC_RUN
-#include <libcore.pb.h>
+#include <core/server/gen/libcore.pb.h>
 #endif
 
 #include "include/global/Configs.hpp"
 #include "include/stats/connections/connectionLister.hpp"
 #include "3rdparty/qv2ray/v2/ui/widgets/speedchart/SpeedWidget.hpp"
+#include "include/database/entities/Profile.h"
 #ifdef Q_OS_LINUX
 #include <QtDBus>
 #endif
 
 #ifndef MW_INTERFACE
 
-#include <QTableWidgetItem>
 #include <QKeyEvent>
 #include <QSystemTrayIcon>
+#include <QQueue>
+#include <QWaitCondition>
 #include <QProcess>
 #include <QTextDocument>
 #include <QShortcut>
+#include <QCheckBox>
 #include <QSemaphore>
 #include <QMutex>
 #include <QThreadPool>
+#include <QLocalServer>
+#include <QLocalSocket>
 
 #include "group/GroupSort.hpp"
-
-#include "include/dataStore/ProxyEntity.hpp"
 #include "include/global/GuiUtils.hpp"
+#include "include/ui/utils/DataViewHtmlGenerator.h"
+#include "include/ui/utils/ProfilesTableModel.h"
 #include "ui_mainwindow.h"
 
 #endif
@@ -53,7 +58,7 @@ public:
 
     void prepare_exit();
 
-    void refresh_proxy_list(const int &id = -1);
+    void refresh_proxy_list(const QList<int> &ids = {}, bool mayNeedReset = false);
 
     void show_group(int gid);
 
@@ -74,8 +79,6 @@ public:
     void set_spmode_vpn(bool enable, bool save = true);
 
     bool get_elevated_permissions(int reason = 3);
-
-    void show_log_impl(const QString &log);
 
     void start_select_mode(QObject *context, const std::function<void(int)> &callback);
 
@@ -153,9 +156,9 @@ private slots:
 
     void on_menu_update_subscription_triggered();
 
-    void on_proxyListTable_itemDoubleClicked(QTableWidgetItem *item);
+    void on_profilesTableView_doubleClicked(const QModelIndex &index);
 
-    void on_proxyListTable_customContextMenuRequested(const QPoint &pos);
+    void on_profilesTableView_customContextMenuRequested(const QPoint &pos);
 
     void on_tabWidget_currentChanged(int index);
 
@@ -163,23 +166,29 @@ private slots:
 
 private:
     Ui::MainWindow *ui;
+    ProfilesTableModel *profilesTableModel = nullptr;
     QSystemTrayIcon *tray;
-    QShortcut *shortcut_ctrl_f = new QShortcut(QKeySequence("Ctrl+F"), this);
-    QShortcut *shortcut_esc = new QShortcut(QKeySequence("Esc"), this);
+    QMenu *trayServerMenu = nullptr;
+    int trayServerPage = 0;
+    QShortcut *shortcut_esc = new QShortcut(QKeySequence::Cancel, this);
     //
     QThreadPool *parallelCoreCallPool = new QThreadPool(this);
     std::atomic<bool> stopSpeedtest = false;
     QMutex speedtestRunning;
+    std::atomic<bool> currentUnderTest = false;
     //
-    Configs_sys::CoreProcess *core_process;
+    Configs_sys::CoreProcess *core_process = nullptr;
+    QMutex coreProcessMutex; // serializes core_process init (DS_cores) vs IPC newConnection (UI)
+    QLocalServer *core_server = nullptr;
+    bool rpc_started = false;
+    QMutex defaultClientMutex;
     qint64 vpn_pid = 0;
     //
-    bool qvLogAutoScoll = true;
     QTextDocument *qvLogDocument = new QTextDocument(this);
     //
     QString title_error;
     int icon_status = -1;
-    std::shared_ptr<Configs::ProxyEntity> running;
+    std::shared_ptr<Configs::Profile> running;
     QString traffic_update_cache;
     qint64 last_test_time = 0;
     //
@@ -192,17 +201,15 @@ private:
     //
     QMutex mu_download_update;
     //
+    QMutex connectionListMu;
+    //
     int toolTipID;
     //
     SpeedWidget *speedChartWidget;
     //
     // for data view
     QDateTime lastUpdated = QDateTime::currentDateTime();
-    QString currentSptProfileName;
-    bool showSpeedtestData = false;
-    bool showDownloadData = false;
-    libcore::SpeedTestResult currentTestResult;
-    DownloadProgressReport currentDownloadReport; // could use a list, but don't think can show more than one anyways
+    DataViewHtmlGenerator dataViewHtmlGenerator_;
 
     // shortcuts
     QList<QShortcut*> hiddenMenuShortcuts;
@@ -212,23 +219,49 @@ private:
 
     // search
     bool searchEnabled = false;
-    QString searchString;
+    QString addressFilterString;
+    QString nameFilterString;
+    QString typeFilterString;
+    QString countryFilterString;
 
-    void setSearchState(bool enable);
+    // log
+    QStringList includeKeywords;
+    QStringList excludeKeywords;
+    QRegularExpression includeCombined;
+    QRegularExpression excludeCombined;
+    QMutex logMutex;
+    QQueue<QString> logQueue;
+    QWaitCondition logWaiter;
 
-    QList<std::shared_ptr<Configs::ProxyEntity>> filterProfilesList(const QList<int>& profiles);
+    void append_log(const QString &log);
 
-    QList<std::shared_ptr<Configs::ProxyEntity>> get_now_selected_list();
+    void log_process_loop();
 
-    QList<std::shared_ptr<Configs::ProxyEntity>> get_selected_or_group();
+    bool should_print_log(const QString &log);
+
+    void updateLogFilterFields();
+
+    QList<int> filterProfilesList(const QList<int>& profileIDs);
+
+    QList<int> get_now_selected_list();
+
+    QList<int> get_selected_or_group();
+
+    void set_system_proxy(bool mustDisable);
+
+    void saveProfileFocusState();
+
+    void restoreProfileFocusState();
+
+    void clearUnavailableProfiles(bool confirm = true, QList<int> profileIDs = {});
 
     void dialog_message_impl(const QString &sender, const QString &info);
 
-    void refresh_proxy_list_impl(const int &id = -1, GroupSortAction groupSortAction = {});
+    void refresh_proxy_list_column_size();
 
-    void refresh_proxy_list_impl_refresh_data(const int &id = -1, bool stopping = false);
+    void refresh_proxy_list_impl(const QList<int> &ids = {}, bool mayNeedReset = false);
 
-    void refresh_table_item(int row, const std::shared_ptr<Configs::ProxyEntity>& profile, bool stopping);
+    void refresh_proxy_list_impl_refresh_data(const QList<int>& ids = {}, bool mayNeedReset = false);
 
     void parseQrImage(const QPixmap *image);
 
@@ -254,17 +287,23 @@ private:
 
     // rpc
 
-    static void setup_rpc();
+    void setup_rpc(QLocalSocket *socket);
 
-    void urltest_current_group(const QList<std::shared_ptr<Configs::ProxyEntity>>& profiles);
+    bool verify_core_pid(QLocalSocket *socket);
+
+    void urltest_current_group(const QList<int>& profileIDs);
+
+    void iptest_current_group(const QList<int>& profileIDs);
 
     void stopTests();
 
     void runURLTest(const QString& config, const QString& xrayConfig, bool useDefault, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
 
+    void runIPTest(const QString& config, const QString& xrayConfig, bool useDefault, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
+
     void url_test_current();
 
-    void speedtest_current_group(const QList<std::shared_ptr<Configs::ProxyEntity>>& profiles, bool testCurrent = false);
+    void speedtest_current_group(const QList<int>& profileIDs, bool testCurrent = false);
 
     void runSpeedTest(const QString& config, const QString& xrayConfig, bool useDefault, bool testCurrent, const QStringList& outboundTags, const QMap<QString, int>& tag2entID, int entID = -1);
 
@@ -274,7 +313,7 @@ private:
 
     void setupConnectionList();
 
-    void querySpeedtest(QDateTime lastProxyListUpdate, const QMap<QString, int>& tag2entID, bool testCurrent);
+    void querySpeedtest(const QMap<QString, int>& tag2entID, bool testCurrent);
 
     void queryCountryTest(const QMap<QString, int>& tag2entID, bool testCurrent);
 

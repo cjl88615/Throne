@@ -1,12 +1,14 @@
 #include "include/configs/common/multiplex.h"
 #include "include/configs/common/utils.h"
 
+
+
 namespace Configs {
     bool TcpBrutal::ParseFromLink(const QString& link)
     {
         auto url = QUrl(link);
         if (!url.isValid()) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         if (query.hasQueryItem("brutal_enabled")) enabled = query.queryItemValue("brutal_enabled") == "true";
         if (query.hasQueryItem("brutal_up_mbps")) up_mbps = query.queryItemValue("brutal_up_mbps").toInt();
@@ -49,7 +51,7 @@ namespace Configs {
     {
         auto url = QUrl(link);
         if (!url.isValid()) return false;
-        auto query = QUrlQuery(url.query(QUrl::ComponentFormattingOption::FullyDecoded));
+        auto query = QUrlQuery(url.query());
 
         if (query.hasQueryItem("mux")) enabled = query.queryItemValue("mux") == "true";
         else unspecified = true;
@@ -76,6 +78,19 @@ namespace Configs {
         if (object.contains("max_streams")) max_streams = object["max_streams"].toInt();
         if (object.contains("padding")) padding = object["padding"].toBool();
         if (object.contains("brutal")) brutal->ParseFromJson(object["brutal"].toObject());
+        return true;
+    }
+    bool Multiplex::ParseFromClash(const clash::Proxies& object)
+    {
+        enabled = object.smux.enabled;
+        if (!object.smux.protocol.empty()) protocol = QString::fromStdString(object.smux.protocol);
+        if (object.smux.max_streams > 0) {
+            max_streams = object.smux.max_streams;
+        } else {
+            max_connections = object.smux.max_connections;
+            min_streams = object.smux.min_streams;
+        }
+        padding = object.smux.padding;
         return true;
     }
     QString Multiplex::ExportToLink()
@@ -107,11 +122,11 @@ namespace Configs {
     BuildResult Multiplex::Build()
     {
         auto obj = ExportToJson();
-        if (unspecified && dataStore->mux_default_on) obj["enabled"] = true;
+        if (unspecified && Configs::dataManager->settingsRepo->mux_default_on) obj["enabled"] = true;
         if (!obj["enabled"].toBool()) return {{}, ""};
-        if (protocol.isEmpty()) obj["protocol"] = dataStore->mux_protocol;
-        if (max_streams == 0 && max_connections == 0 && min_streams == 0) obj["max_streams"] = dataStore->mux_concurrency;
-        if (dataStore->mux_padding) obj["padding"] = true;
+        if (protocol.isEmpty()) obj["protocol"] = Configs::dataManager->settingsRepo->mux_protocol;
+        if (max_streams == 0 && max_connections == 0 && min_streams == 0) obj["max_streams"] = Configs::dataManager->settingsRepo->mux_concurrency;
+        if (Configs::dataManager->settingsRepo->mux_padding) obj["padding"] = true;
         return {obj, ""};
     }
 }

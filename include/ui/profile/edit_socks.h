@@ -1,5 +1,4 @@
-#ifndef EDIT_SOCKS_H
-#define EDIT_SOCKS_H
+#pragma once
 
 #include <QWidget>
 #include "profile_editor.h"
@@ -17,13 +16,11 @@ public:
 
     ~EditSocks() override;
 
-    void onStart(std::shared_ptr<Configs::ProxyEntity> _ent) override;
+    void onStart(std::shared_ptr<Configs::Profile> _ent) override;
 
     bool onEnd() override;
 
 private:
     Ui::EditSocks *ui;
-    std::shared_ptr<Configs::ProxyEntity> ent;
+    std::shared_ptr<Configs::Profile> ent;
 };
-
-#endif // EDIT_SOCKS_H

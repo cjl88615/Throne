@@ -2,7 +2,7 @@
 
 #include <QMessageBox>
 
-ProxyItem::ProxyItem(QWidget *parent, const std::shared_ptr<Configs::ProxyEntity> &ent, QListWidgetItem *item)
+ProxyItem::ProxyItem(QWidget *parent, const std::shared_ptr<Configs::Profile> &ent, QListWidgetItem *item)
     : QWidget(parent), ui(new Ui::ProxyItem) {
     ui->setupUi(this);
     this->setLayoutDirection(Qt::LeftToRight);
@@ -22,7 +22,7 @@ void ProxyItem::refresh_data() {
     ui->type->setText(ent->outbound->DisplayType());
     ui->name->setText(ent->outbound->DisplayName());
     ui->address->setText(ent->outbound->DisplayAddress());
-    ui->traffic->setText(ent->traffic_data->DisplayTraffic());
+    ui->traffic->setText(ent->DisplayTraffic());
     ui->test_result->setText(ent->DisplayTestResult());
 
     runOnThread(

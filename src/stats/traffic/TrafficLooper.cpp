@@ -7,13 +7,16 @@
 #include <QJsonDocument>
 #include <QElapsedTimer>
 
+#include "include/database/ProfilesRepo.h"
+
+
 namespace Stats {
 
     TrafficLooper *trafficLooper = new TrafficLooper;
     QElapsedTimer elapsedTimer;
 
     void TrafficLooper::UpdateAll() {
-        if (Configs::dataStore->disable_traffic_stats) {
+        if (Configs::dataManager->settingsRepo->disable_traffic_stats) {
             return;
         }
 
@@ -23,42 +26,44 @@ namespace Stats {
 
         int proxyUp = 0, proxyDown = 0;
 
-        for (const auto &item: this->items) {
-            if (!resp.ups.contains(item->tag)) continue;
+        for (auto& e : entries) {
+            const QString tag = e.tag;
+            if (!resp.ups.contains(tag.toStdString())) continue;
             auto now = elapsedTimer.elapsed();
-            auto interval = now - item->last_update;
-            item->last_update = now;
+            auto interval = now - e.last_update;
+            e.last_update = now;
             if (interval <= 0) continue;
-            auto up = resp.ups.at(item->tag);
-            auto down = resp.downs.at(item->tag);
-            if (item->tag == "proxy")
+            const auto up = resp.ups.at(tag.toStdString());
+            const auto down = resp.downs.at(tag.toStdString());
+            if (e.tag == "proxy")
             {
                 proxyUp = up;
                 proxyDown = down;
             }
-            item->uplink += up;
-            item->downlink += down;
-            item->uplink_rate = static_cast<double>(up) * 1000.0 / static_cast<double>(interval);
-            item->downlink_rate = static_cast<double>(down) * 1000.0 / static_cast<double>(interval);
-            if (item->ignoreForRate) continue;
-            if (item->tag == "direct")
+            e.uplink += up;
+            e.downlink += down;
+            if (e.ent) {
+                e.ent->traffic_uplink += up;
+                e.ent->traffic_downlink += down;
+            }
+            e.uplink_rate = static_cast<double>(up) * 1000.0 / static_cast<double>(interval);
+            e.downlink_rate = static_cast<double>(down) * 1000.0 / static_cast<double>(interval);
+            if (e.tag == "direct")
             {
-                direct->uplink_rate = item->uplink_rate;
-                direct->downlink_rate = item->downlink_rate;
+                direct->uplink_rate = e.uplink_rate;
+                direct->downlink_rate = e.downlink_rate;
             } else
             {
-                proxy->uplink_rate += item->uplink_rate;
-                proxy->downlink_rate += item->downlink_rate;
+                proxy->uplink_rate += e.uplink_rate;
+                proxy->downlink_rate += e.downlink_rate;
             }
         }
-        if (isChain)
-        {
-            for (const auto &item: this->items)
-            {
-                if (item->isChainTail)
-                {
-                    item->uplink += proxyUp;
-                    item->downlink += proxyDown;
+
+        if (isChain) {
+            for (auto& e : entries) {
+                if (e.ent && e.tag != entries.last().tag && e.tag != "direct" && e.tag != "proxy" && !e.tag.contains("route")) {
+                    e.ent->traffic_downlink += proxyDown;
+                    e.ent->traffic_uplink += proxyUp;
                 }
             }
         }
@@ -69,7 +74,7 @@ namespace Stats {
         while (true) {
             QThread::msleep(1000); // refresh every one second
 
-            if (Configs::dataStore->disable_traffic_stats) {
+            if (Configs::dataManager->settingsRepo->disable_traffic_stats) {
                 continue;
             }
 
@@ -107,15 +112,34 @@ namespace Stats {
             runOnUiThread([=,this] {
                 auto m = GetMainWindow();
                 if (proxy != nullptr) {
-                    m->refresh_status(QObject::tr("Proxy: %1\nDirect: %2").arg(proxy->DisplaySpeed(), direct->DisplaySpeed()));
+                    m->refresh_status(QObject::tr("Proxy: %1\nDirect: %2").arg(DisplaySpeed(proxy), DisplaySpeed(direct)));
                     m->update_traffic_graph(proxy->downlink_rate, proxy->uplink_rate, direct->downlink_rate, direct->uplink_rate);
                 }
-                for (const auto &item: items) {
-                    if (item->id < 0) continue;
-                    m->refresh_proxy_list(item->id);
+                for (const auto &profile: profiles) {
+                    m->refresh_proxy_list({profile->id});
+                    Configs::dataManager->profilesRepo->SaveTraffic(profile);
                 }
             });
         }
+    }
+
+    void TrafficLooper::SetEnts(const QList<std::pair<std::shared_ptr<Configs::Profile>, QString>>& profsAndTags) {
+        proxy = std::make_shared<TrafficLooperEntry>("proxy");
+        direct = std::make_shared<TrafficLooperEntry>("direct");
+
+        entries.clear();
+        profiles.clear();
+        for (const auto& [profile, tag] : profsAndTags) {
+            if (tag.isEmpty()) continue;
+            profiles.append(profile);
+            TrafficLooperEntry e;
+            e.tag = tag;
+            e.ent = profile.get();
+            e.downlink = profile->traffic_downlink;
+            e.uplink = profile->traffic_uplink;
+            entries.append(e);
+        }
+        entries.append(*direct.get());
     }
 
 } // namespace Stats
