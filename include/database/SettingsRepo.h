@@ -205,7 +205,7 @@ namespace Configs {
         bool adblock_enable = false;
 
         // VPN
-        bool fake_dns = false;
+        bool fake_dns = true;
         bool enable_tun_routing = false;
 #ifdef Q_OS_MACOS
         QString vpn_implementation = "gvisor";

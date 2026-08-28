@@ -247,10 +247,6 @@ int main(int argc, char* argv[]) {
     const QStringList launchFiles = LaunchFiles_ExtractFromArgs(arguments, QDir::current());
 
     QDir::setCurrent(QApplication::applicationDirPath());
-    if (QFile::exists("updater.old")) {
-        QFile::remove("updater.old");
-    }
-
     auto wd = QDir(QApplication::applicationDirPath());
     bool useAppdata = false;
     QString appdataDir;
@@ -264,7 +260,7 @@ int main(int argc, char* argv[]) {
 #ifdef NKR_CPP_USE_APPDATA
     useAppdata = true;
 #endif
-    QApplication::setApplicationName("Throne");
+    QApplication::setApplicationName("TaliabuVPN");
     if(useAppdata) {
         if (!appdataDir.isEmpty()) {
             wd.setPath(appdataDir);

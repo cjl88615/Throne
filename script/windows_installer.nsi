@@ -14,8 +14,8 @@
   !define APP_VERSION_BUILD 0
 !endif
 
-Name "Throne ${APP_VERSION}"
-OutFile "ThroneSetup.exe"
+Name "TaliabuVPN ${APP_VERSION}"
+OutFile "TaliabuVPNSetup.exe"
 
 ; 1. NEVER ask for UAC on launch
 RequestExecutionLevel user 
@@ -30,14 +30,14 @@ SetCompressorDictSize 64
 !include WinVer.nsh
 !include x64.nsh
 
-!define APP_DIR_NAME "Throne"
+!define APP_DIR_NAME "TaliabuVPN"
 
 !define MUI_ICON "res\Throne.ico"
 !define MUI_ABORTWARNING
-!define MUI_WELCOMEPAGE_TITLE "Welcome to Throne Installer"
-!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of Throne."
-!define MUI_FINISHPAGE_RUN "$INSTDIR\Throne.exe"
-!define MUI_FINISHPAGE_RUN_TEXT "Launch Throne"
+!define MUI_WELCOMEPAGE_TITLE "Welcome to TaliabuVPN Installer"
+!define MUI_WELCOMEPAGE_TEXT "This wizard will guide you through the installation of TaliabuVPN."
+!define MUI_FINISHPAGE_RUN "$INSTDIR\TaliabuVPN.exe"
+!define MUI_FINISHPAGE_RUN_TEXT "Launch TaliabuVPN"
 !addplugindir .\script\
 
 ; This is the Windows constant used to draw the UAC Shield on a button
@@ -66,7 +66,7 @@ Page custom InstallModePageCreate InstallModePageLeave
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipPageCheck
 !define MUI_PAGE_CUSTOMFUNCTION_SHOW DirectoryShow
 !define MUI_PAGE_CUSTOMFUNCTION_LEAVE DirectoryLeave
-!define MUI_DIRECTORYPAGE_TEXT_TOP "Setup will install Throne in the folder below. If the folder you choose is not named '${APP_DIR_NAME}', Setup creates a '${APP_DIR_NAME}' subfolder inside it, so uninstalling only ever removes Throne's own folder."
+!define MUI_DIRECTORYPAGE_TEXT_TOP "Setup will install TaliabuVPN in the folder below. If the folder you choose is not named '${APP_DIR_NAME}', Setup creates a '${APP_DIR_NAME}' subfolder inside it, so uninstalling only ever removes TaliabuVPN's own folder."
 !insertmacro MUI_PAGE_DIRECTORY
 
 !insertmacro MUI_PAGE_INSTFILES
@@ -80,13 +80,13 @@ UninstPage custom un.DataPageCreate un.DataPageLeave
 !insertmacro MUI_LANGUAGE "English"
 
 VIProductVersion "${APP_VERSION_MAJOR}.${APP_VERSION_MINOR}.${APP_VERSION_PATCH}.${APP_VERSION_BUILD}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "Throne"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "Throne Setup"
+VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductName" "TaliabuVPN"
+VIAddVersionKey /LANG=${LANG_ENGLISH} "FileDescription" "TaliabuVPN Setup"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "FileVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=${LANG_ENGLISH} "ProductVersion" "${APP_VERSION}"
-VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "Throne"
+VIAddVersionKey /LANG=${LANG_ENGLISH} "LegalCopyright" "TaliabuVPN"
 
-UninstallText "This will uninstall Throne. Do you wish to continue?"
+UninstallText "This will uninstall TaliabuVPN. Do you wish to continue?"
 UninstallIcon "res\ThroneDel.ico"
 
 ; =====================================
@@ -103,8 +103,8 @@ Function .onInit
     StrCpy $IsAllUsers "1"
 
     ; Read the chosen installation path from the temporary registry key
-    ReadRegStr $INSTDIR HKCU "Software\Throne" "TempSetupPath"
-    DeleteRegValue HKCU "Software\Throne" "TempSetupPath" ; Clean it up immediately
+    ReadRegStr $INSTDIR HKCU "Software\TaliabuVPN" "TempSetupPath"
+    DeleteRegValue HKCU "Software\TaliabuVPN" "TempSetupPath" ; Clean it up immediately
 
     ${If} $INSTDIR == ""
       StrCpy $INSTDIR "$PROGRAMFILES64\${APP_DIR_NAME}"
@@ -181,7 +181,7 @@ Function DirectoryShow
 FunctionEnd
 
 Function EnsureAppSubfolder
-  ; A hand-typed "D:\Apps\" would otherwise append into "D:\Apps\\Throne".
+  ; A hand-typed "D:\Apps\" would otherwise append into "D:\Apps\\TaliabuVPN".
   StrCpy $0 $INSTDIR "" -1
   ${If} $0 == '\'
     StrCpy $INSTDIR $INSTDIR -1
@@ -203,7 +203,7 @@ Function DirectoryLeave
     Pop $0
     ${If} $0 != "Admin"
       ; Write the chosen path safely to the registry for the elevated process to grab
-      WriteRegStr HKCU "Software\Throne" "TempSetupPath" "$INSTDIR"
+      WriteRegStr HKCU "Software\TaliabuVPN" "TempSetupPath" "$INSTDIR"
 
       ; Trigger UAC and silently launch the elevated installer
       ExecShell "runas" "$EXEPATH" "/ELEVATED"
@@ -255,46 +255,42 @@ Section "Install"
   SetOutPath "$INSTDIR"
   SetOverwrite on
 
-  !insertmacro AbortOnRunningApp "$INSTDIR\Throne.exe"
+  !insertmacro AbortOnRunningApp "$INSTDIR\TaliabuVPN.exe"
 
   ${If} ${IsNativeAMD64}
     ${If} ${AtLeastWaaS} 1809
       File /oname=libcronet.dll "deployment\windows-amd64\libcronet.dll"
       File /oname=ThroneCore.exe "deployment\windows-amd64\ThroneCore.exe"
-      File /oname=Throne.exe "deployment\windows-amd64\Throne.exe"
-      File /oname=updater.exe "deployment\windows-amd64\updater.exe"
+      File /oname=TaliabuVPN.exe "deployment\windows-amd64\TaliabuVPN.exe"
     ${Else}
       File /oname=ThroneCore.exe "deployment\windowslegacy-amd64\ThroneCore.exe"
-      File /oname=Throne.exe "deployment\windowslegacy-amd64\Throne.exe"
-      File /oname=updater.exe "deployment\windowslegacy-amd64\updater.exe"
+      File /oname=TaliabuVPN.exe "deployment\windowslegacy-amd64\TaliabuVPN.exe"
     ${EndIf}
   ${ElseIf} ${IsNativeARM64}
     File /oname=libcronet.dll "deployment\windows-arm64\libcronet.dll"
     File /oname=ThroneCore.exe "deployment\windows-arm64\ThroneCore.exe"
-    File /oname=Throne.exe "deployment\windows-arm64\Throne.exe"
-    File /oname=updater.exe "deployment\windows-arm64\updater.exe"
+    File /oname=TaliabuVPN.exe "deployment\windows-arm64\TaliabuVPN.exe"
   ${ElseIf} ${IsNativeIA32}
     File /oname=ThroneCore.exe "deployment\windowslegacy-386\ThroneCore.exe"
-    File /oname=Throne.exe "deployment\windowslegacy-386\Throne.exe"
-    File /oname=updater.exe "deployment\windowslegacy-386\updater.exe"
+    File /oname=TaliabuVPN.exe "deployment\windowslegacy-386\TaliabuVPN.exe"
   ${Else}
     Abort "Unsupported CPU architecture!"
   ${EndIf}
 
-  CreateShortcut "$DESKTOP\Throne.lnk" "$INSTDIR\Throne.exe"
-  CreateShortcut "$SMPROGRAMS\Throne.lnk" "$INSTDIR\Throne.exe" "" "$INSTDIR\Throne.exe" 0
+  CreateShortcut "$DESKTOP\TaliabuVPN.lnk" "$INSTDIR\TaliabuVPN.exe"
+  CreateShortcut "$SMPROGRAMS\TaliabuVPN.lnk" "$INSTDIR\TaliabuVPN.exe" "" "$INSTDIR\TaliabuVPN.exe" 0
 
-  WriteRegStr SHCTX "Software\Throne" "InstallPath" "$INSTDIR"
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "DisplayName" "Throne"
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "DisplayVersion" "${APP_VERSION}"
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "Publisher" "Throne"
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "DisplayIcon" "$INSTDIR\Throne.exe"
-  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "VersionMajor" ${APP_VERSION_MAJOR}
-  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "VersionMinor" ${APP_VERSION_MINOR}
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "UninstallString" "$INSTDIR\uninstall.exe"
-  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "InstallLocation" "$INSTDIR"
-  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "NoModify" 1
-  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne" "NoRepair" 1
+  WriteRegStr SHCTX "Software\TaliabuVPN" "InstallPath" "$INSTDIR"
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "DisplayName" "TaliabuVPN"
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "DisplayVersion" "${APP_VERSION}"
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "Publisher" "TaliabuVPN"
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "DisplayIcon" "$INSTDIR\TaliabuVPN.exe"
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "VersionMajor" ${APP_VERSION_MAJOR}
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "VersionMinor" ${APP_VERSION_MINOR}
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "UninstallString" "$INSTDIR\uninstall.exe"
+  WriteRegStr SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "InstallLocation" "$INSTDIR"
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "NoModify" 1
+  WriteRegDWORD SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN" "NoRepair" 1
   WriteUninstaller "uninstall.exe"
 SectionEnd
 
@@ -316,7 +312,7 @@ Function un.onInit
   ${EndIf}
 
   ; Read the Admin registry to see if THIS specific folder belongs to an Admin installation
-  ReadRegStr $0 HKLM "Software\Throne" "InstallPath"
+  ReadRegStr $0 HKLM "Software\TaliabuVPN" "InstallPath"
 
   ${If} $0 == $UninstPath
     ; --- IT IS AN ALL USERS INSTALL ---
@@ -324,7 +320,7 @@ Function un.onInit
     UserInfo::GetAccountType
     Pop $1
     ${If} $1 != "Admin"
-       MessageBox MB_YESNO|MB_ICONEXCLAMATION "Uninstalling Throne for all users requires Administrator privileges.$\n$\nDo you want to elevate?" IDNO Stay
+       MessageBox MB_YESNO|MB_ICONEXCLAMATION "Uninstalling TaliabuVPN for all users requires Administrator privileges.$\n$\nDo you want to elevate?" IDNO Stay
        ; Elevate via UAC and explicitly pass the real folder path in quotes!
        ExecShell "runas" "$EXEPATH" '/UINSTDIR="$UninstPath"'
        Quit
@@ -344,12 +340,12 @@ FunctionEnd
 ; USER DATA PAGE
 ; =====================================
 Function un.DataPageCreate
-  !insertmacro MUI_HEADER_TEXT "Remove Settings" "Choose what to do with your Throne data."
+  !insertmacro MUI_HEADER_TEXT "Remove Settings" "Choose what to do with your TaliabuVPN data."
 
   nsDialogs::Create 1018
   Pop $0
 
-  ${NSD_CreateLabel} 0 0 100% 24u "Throne keeps its profiles, settings and logs in the installation folder, or under your user profile when that folder is not writable."
+  ${NSD_CreateLabel} 0 0 100% 24u "TaliabuVPN keeps its profiles, settings and logs in the installation folder, or under your user profile when that folder is not writable."
   Pop $0
 
   ${NSD_CreateCheckbox} 10u 30u 100% 12u "Delete my profiles, settings and logs"
@@ -358,7 +354,7 @@ Function un.DataPageCreate
     SendMessage $CheckDeleteData ${BM_SETCHECK} ${BST_CHECKED} 0
   ${EndIf}
 
-  ${NSD_CreateLabel} 10u 48u 100% 20u "Clear this if you plan to reinstall Throne later and want to keep them."
+  ${NSD_CreateLabel} 10u 48u 100% 20u "Clear this if you plan to reinstall TaliabuVPN later and want to keep them."
   Pop $0
 
   nsDialogs::Show
@@ -374,17 +370,15 @@ Function un.DataPageLeave
 FunctionEnd
 
 Section "Uninstall"
-  !insertmacro AbortOnRunningApp "$INSTDIR\Throne.exe"
+  !insertmacro AbortOnRunningApp "$INSTDIR\TaliabuVPN.exe"
 
-  Delete "$SMPROGRAMS\Throne.lnk"
-  Delete "$DESKTOP\Throne.lnk"
-  RMDir "$SMPROGRAMS\Throne"
+  Delete "$SMPROGRAMS\TaliabuVPN.lnk"
+  Delete "$DESKTOP\TaliabuVPN.lnk"
+  RMDir "$SMPROGRAMS\TaliabuVPN"
 
   Delete "$INSTDIR\libcronet.dll"
   Delete "$INSTDIR\ThroneCore.exe"
-  Delete "$INSTDIR\Throne.exe"
-  Delete "$INSTDIR\updater.exe"
-  Delete "$INSTDIR\updater.old"
+  Delete "$INSTDIR\TaliabuVPN.exe"
   Delete "$INSTDIR\uninstall.exe"
 
   ${If} $DeleteUserData == 1
@@ -395,8 +389,8 @@ Section "Uninstall"
   RMDir "$INSTDIR"
 
   ; Clean up registry!
-  DeleteRegKey SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\Throne"
-  DeleteRegKey SHCTX "Software\Throne"
+  DeleteRegKey SHCTX "Software\Microsoft\Windows\CurrentVersion\Uninstall\TaliabuVPN"
+  DeleteRegKey SHCTX "Software\TaliabuVPN"
 
   ; Last, because SHCTX follows the shell var context and an all-users uninstall
   ; would otherwise resolve $APPDATA to ProgramData.

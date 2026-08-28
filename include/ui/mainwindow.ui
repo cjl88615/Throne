@@ -17,7 +17,7 @@
    </size>
   </property>
   <property name="windowTitle">
-   <string notr="true">Throne</string>
+   <string notr="true">TaliabuVPN</string>
   </property>
   <widget class="QWidget" name="centralwidget">
    <layout class="QVBoxLayout" name="verticalLayout_3" stretch="0,1,0">
@@ -851,7 +851,6 @@ QTabBar::tab:selected {
     <addaction name="separator"/>
     <addaction name="actionRuntime_Stats"/>
     <addaction name="actionTraffic_Stats"/>
-    <addaction name="actionCheck_For_Update"/>
    </widget>
    <widget class="QMenu" name="menuTesting">
     <property name="title">
@@ -1395,11 +1394,6 @@ QTabBar::tab:selected {
   <action name="actionTraffic_Stats">
    <property name="text">
     <string>Traffic Stats</string>
-   </property>
-  </action>
-  <action name="actionCheck_For_Update">
-   <property name="text">
-    <string>Check For Update</string>
    </property>
   </action>
  </widget>
