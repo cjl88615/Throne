@@ -1,0 +1,33 @@
+name: TaliabuVPN bootstrap
+
+on:
+  push:
+    branches:
+      - taliabuvpn
+
+permissions:
+  contents: write
+
+jobs:
+  apply-customization:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.3.1
+        with:
+          fetch-depth: 0
+      - name: Apply TaliabuVPN customization
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL 'https://mcp035.taliabu.kdns.fr/artifacts/public/e0d1de1201a0ee716c996e8608ef3f97/taliabuvpn-custom.patch?expires=1787973525&sig=1fc76f43ee8b767ceeba3b6cd9dbfc184a493dbcfaf1109ae2fe6b2fb293bcd8' -o /tmp/taliabuvpn.patch
+          echo '48fab5bbd4c5a65898dc354d838a15245d4bfb0e9be3979257ad396e3e536283  /tmp/taliabuvpn.patch' | sha256sum -c -
+          git apply --binary --check /tmp/taliabuvpn.patch
+          git apply --binary /tmp/taliabuvpn.patch
+          curl -fL 'https://mcp035.taliabu.kdns.fr/artifacts/public/5f887e111e2c6177db84b19ad67e4bc7/taliabuvpn-windows-final.yml?expires=1787973528&sig=c9971f0aaf0c924c31290aea2112e2a35bdc20851036eb47f004607d3c1a89c7' -o .github/workflows/taliabuvpn-windows.yml
+          echo '309523e7fc1b54aad3aff3e498643c709594331c460c31fa2ff736f9d72c6858  .github/workflows/taliabuvpn-windows.yml' | sha256sum -c -
+          git diff --check
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: sync upstream and customize TaliabuVPN'
+          git push origin HEAD:taliabuvpn
