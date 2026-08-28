@@ -1,0 +1,33 @@
+name: TaliabuVPN icon fix
+
+on:
+  push:
+    branches:
+      - taliabuvpn
+
+permissions:
+  contents: write
+
+jobs:
+  apply-icon-fix:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4.3.1
+        with:
+          fetch-depth: 0
+      - name: Replace TaliabuVPN application icons
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl -fL 'https://mcp035.taliabu.kdns.fr/artifacts/public/6d08a7e4b8903aa5861e743a4e223a0d/taliabuvpn-icon-fix.patch?expires=1787982166&sig=3cdf14019788f211552776bb7cfd87c62306c1db310aa18820a0fe0c442dc0a6' -o /tmp/taliabuvpn-icon-fix.patch
+          echo 'f3ebca3dfd22e229cf38d707cebcbb72ab5c3ed216adc3b9df7d875d95dc6e57  /tmp/taliabuvpn-icon-fix.patch' | sha256sum -c -
+          git apply --binary --check /tmp/taliabuvpn-icon-fix.patch
+          git apply --binary /tmp/taliabuvpn-icon-fix.patch
+          echo '5cedf2da29003e15454f234f7873de1a9e0b0407bedfd5db1058ac6079665720  res/Throne.ico' | sha256sum -c -
+          echo 'df478bcecb751ff82c9afb4b01b09025e1b1f23832c23a62faeadba1967ceb37  res/public/Throne.png' | sha256sum -c -
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add res/Throne.ico res/ThroneDel.ico res/public/Dns.png res/public/Off.png res/public/Proxy-Dns.png res/public/Proxy.png res/public/Throne.png res/public/Tun.png
+          git commit -m 'fix: use supplied TaliabuVPN icon assets'
+          git push origin HEAD:taliabuvpn
