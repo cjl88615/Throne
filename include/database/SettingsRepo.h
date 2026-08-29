@@ -155,9 +155,9 @@ namespace Configs {
 
         // Remember
         bool remember_system_proxy = false;
-        bool remember_tun = false;
+        bool remember_tun = true;
         int remember_id = NoProfileId;
-        bool remember_enable = false;
+        bool remember_enable = true;
         bool windows_set_admin = false;
         QMap<QString, QKeySequence> shortcuts;
 
