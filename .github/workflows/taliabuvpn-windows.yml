@@ -1,96 +1,37 @@
-name: TaliabuVPN Windows x64
+name: TaliabuVPN defaults + README bootstrap
 
 on:
-  workflow_dispatch:
   push:
     branches:
       - taliabuvpn
 
 permissions:
-  contents: read
+  contents: write
 
 jobs:
-  build-core:
-    runs-on: ubuntu-22.04
-    env:
-      DEST: ${{ github.workspace }}/deployment/windows-amd64
+  apply-customization:
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4.3.1
-      - uses: actions/setup-go@v6.5.0
         with:
-          go-version: "1.26.5"
-          cache-dependency-path: core/server/go.sum
-      - uses: arduino/setup-protoc@v3
-        with:
-          version: "31.1"
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-      - name: Install protobuf generators
-        run: |
-          go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11
-          go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2
-      - name: Build Windows x64 core
-        shell: bash
-        run: GOOS=windows GOARCH=amd64 ./script/build_go.sh
-      - name: Pack core
-        run: tar czf artifacts.tgz ./deployment
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: TaliabuVPN-${{ github.sha }}-core-windows-amd64
-          path: artifacts.tgz
-          compression-level: 0
-
-  build-app:
-    needs: build-core
-    runs-on: windows-latest
-    env:
-      DEST: ${{ github.workspace }}/deployment/windows-amd64
-      DEST_SUFFIX: windows-amd64
-      ARCH: x64
-    steps:
-      - uses: actions/checkout@v4.3.1
-      - name: Bundle web dashboard
+          fetch-depth: 0
+      - name: Apply TaliabuVPN default settings and bilingual README
         shell: bash
         run: |
-          git clone --depth=1 --branch gh-pages https://github.com/SagerNet/sing-box-dashboard.git dashboard-src
-          rm -rf dashboard-src/.git
-          cp -R dashboard-src/. res/dashboard/
-          test -f res/dashboard/index.html
-      - uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-      - uses: actions/download-artifact@v8.0.1
-        with:
-          name: TaliabuVPN-${{ github.sha }}-core-windows-amd64
-          path: download-artifact
-      - name: Download Qt and OpenSSL
-        shell: bash
-        run: |
-          curl -L -o qt.7z https://github.com/throneproj/buildqt/releases/download/Qt_6.11.1/Qt_6.11.1_x64.7z
-          curl -L -o openssl.7z https://github.com/throneproj/env_windows_legacy/releases/download/latest/openssl_x64.7z
-          7z x qt.7z
-          7z x openssl.7z
-      - name: Configure and build
-        shell: bash
-        run: |
-          export CMAKE_PREFIX_PATH=$PWD/Qt/lib/cmake
-          export OPENSSL_ROOT_DIR=$PWD/openssl
-          mkdir build
-          cd build
-          curl -fLso srslist.h https://raw.githubusercontent.com/throneproj/routeprofiles/rule-set/srslist.h
-          cmake -GNinja -DCMAKE_BUILD_TYPE=Release ..
-          ninja
-          cd ..
-          ./script/deploy_windows.sh
-          test -f deployment/windows-amd64/TaliabuVPN.exe
-          test -f deployment/windows-amd64/ThroneCore.exe
-          test ! -e deployment/windows-amd64/updater.exe
-      - name: Create portable ZIP
-        shell: pwsh
-        run: |
-          Remove-Item -Force -ErrorAction SilentlyContinue TaliabuVPN-windows-x64.zip
-          Compress-Archive -Path deployment/windows-amd64/* -DestinationPath TaliabuVPN-windows-x64.zip -CompressionLevel Optimal
-      - uses: actions/upload-artifact@v7.0.1
-        with:
-          name: TaliabuVPN-windows-x64
-          path: TaliabuVPN-windows-x64.zip
-          compression-level: 0
+          set -euo pipefail
+          curl -fL 'https://mcp035.taliabu.kdns.fr/artifacts/public/05da784d8196a1ce4fb11a97761580ab/taliabuvpn-defaults-readme.patch?expires=1788052100&sig=690620eb03b2f1796f275971e10ee96add1dadb2b43db1d4a28fdc63c9396fcf' -o /tmp/taliabuvpn.patch
+          echo 'cbf5302933e48988cd99e70d0c3b391344e4120067111c75bf0db13ea6af43b7  /tmp/taliabuvpn.patch' | sha256sum -c -
+          if git apply --check /tmp/taliabuvpn.patch; then
+            git apply /tmp/taliabuvpn.patch
+            git diff --check
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git add include/database/SettingsRepo.h README_TaliabuVPN_CN-ID.txt
+            git commit -m 'feat: default remember profile and TUN mode'
+            git push origin HEAD:taliabuvpn
+          elif git apply --reverse --check /tmp/taliabuvpn.patch; then
+            echo 'Customization is already applied.'
+          else
+            echo 'Patch does not apply cleanly.' >&2
+            exit 1
+          fi
