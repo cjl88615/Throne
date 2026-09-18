@@ -47,7 +47,7 @@ jobs:
       DEST: ${{ github.workspace }}/deployment/windows-amd64
       DEST_SUFFIX: windows-amd64
       ARCH: x64
-      INPUT_VERSION: "1.3.0"
+      INPUT_VERSION: "20260918"
     steps:
       - uses: actions/checkout@v7.0.1
       - name: Check out sing-box dashboard
@@ -97,14 +97,14 @@ jobs:
         shell: pwsh
         run: |
           Remove-Item -Force -ErrorAction SilentlyContinue deployment/windows-amd64/*.pdb
-          Remove-Item -Force -ErrorAction SilentlyContinue TaliabuVPN-1.3.0-windows-x64.zip
-          Compress-Archive -Path deployment/windows-amd64/* -DestinationPath TaliabuVPN-1.3.0-windows-x64.zip -CompressionLevel Optimal
-          $hash = (Get-FileHash TaliabuVPN-1.3.0-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
-          "$hash  TaliabuVPN-1.3.0-windows-x64.zip" | Set-Content -NoNewline TaliabuVPN-1.3.0-windows-x64.zip.sha256
+          Remove-Item -Force -ErrorAction SilentlyContinue TaliabuVPN-20260918-windows-x64.zip
+          Compress-Archive -Path deployment/windows-amd64/* -DestinationPath TaliabuVPN-20260918-windows-x64.zip -CompressionLevel Optimal
+          $hash = (Get-FileHash TaliabuVPN-20260918-windows-x64.zip -Algorithm SHA256).Hash.ToLower()
+          "$hash  TaliabuVPN-20260918-windows-x64.zip" | Set-Content -NoNewline TaliabuVPN-20260918-windows-x64.zip.sha256
       - uses: actions/upload-artifact@v7.0.1
         with:
-          name: TaliabuVPN-1.3.0-windows-x64
+          name: TaliabuVPN-20260918-windows-x64
           path: |
-            TaliabuVPN-1.3.0-windows-x64.zip
-            TaliabuVPN-1.3.0-windows-x64.zip.sha256
+            TaliabuVPN-20260918-windows-x64.zip
+            TaliabuVPN-20260918-windows-x64.zip.sha256
           compression-level: 0
