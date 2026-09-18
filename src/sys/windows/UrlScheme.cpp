@@ -34,7 +34,7 @@ static QStringList commandKeys(Association a) {
 bool UrlScheme_AutoRegisterByDefault() {
     const QString appDir = QDir(QApplication::applicationDirPath()).canonicalPath();
     for (const QString &root : {QStringLiteral("HKEY_CURRENT_USER"), QStringLiteral("HKEY_LOCAL_MACHINE")}) {
-        const QString installPath = QSettings(root + "\\Software\\Throne", QSettings::NativeFormat).value("InstallPath").toString();
+        const QString installPath = QSettings(root + "\\Software\\TaliabuVPN", QSettings::NativeFormat).value("InstallPath").toString();
         if (!installPath.isEmpty() && QDir(installPath).canonicalPath().compare(appDir, Qt::CaseInsensitive) == 0) return true;
     }
     return false;
@@ -55,14 +55,14 @@ bool UrlScheme_IsCurrent(Association a) {
 
 static void applyLinks(const QString &command) {
     QSettings scheme(kClasses + "\\throne", QSettings::NativeFormat);
-    scheme.setValue("Default", "URL:Throne Protocol");
+    scheme.setValue("Default", "URL:TaliabuVPN Protocol");
     scheme.setValue("URL Protocol", "");
     scheme.setValue("shell/open/command/Default", command);
 }
 
 static void applyConfigFiles(const QString &command) {
     QSettings progId(kClasses + "\\" + kProgId, QSettings::NativeFormat);
-    progId.setValue("Default", "Throne profile");
+    progId.setValue("Default", "TaliabuVPN profile");
     progId.setValue("DefaultIcon/Default", QDir::toNativeSeparators(QApplication::applicationFilePath()) + ",0");
     progId.setValue("shell/open/command/Default", command);
 
@@ -76,7 +76,7 @@ static void applyConfigFiles(const QString &command) {
 
     // Applications\<exe> is what "Open with > Choose another app" reads, the only route for an extensionless file.
     QSettings app(kClasses + "\\Applications\\" + exeName(), QSettings::NativeFormat);
-    app.setValue("FriendlyAppName", "Throne");
+    app.setValue("FriendlyAppName", "TaliabuVPN");
     app.setValue("shell/open/command/Default", command);
     app.remove("SupportedTypes");
     for (const QString &ext : kConfigExtensions) {

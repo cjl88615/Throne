@@ -87,7 +87,6 @@ enum class RefreshAnchor {
 
 enum class ExitReason {
     None,
-    RunUpdater,
     Restart,
     RestartWithTun,
     RestartWithDns,
@@ -274,7 +273,6 @@ private:
     QMutex mu_stopping;
     QMutex mu_exit;
     ExitReason exit_reason = ExitReason::None;
-    QMutex mu_download_update;
     QMutex mu_download_dashboard;
     class ConnectionsTreeModel *connectionsModel = nullptr;
     class ConnectionsTreeFilterProxyModel *connectionsFilterModel = nullptr;
@@ -490,8 +488,6 @@ private:
     int m_vpnAuthRestartID = -1;
 
     bool set_system_dns(bool set, bool save_set = true);
-
-    void CheckUpdate();
 
     void OpenDashboard();
 

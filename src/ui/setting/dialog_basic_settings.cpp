@@ -591,8 +591,8 @@ void DialogBasicSettings::on_backup_create_clicked() {
     QString filePath = QFileDialog::getSaveFileName(
         this,
         tr("Create Backup"),
-        QDir::homePath() + "/Throne-backup.thrbackup",
-        tr("Throne Backup (*.thrbackup)")
+        QDir::homePath() + "/TaliabuVPN-backup.thrbackup",
+        tr("TaliabuVPN Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 
@@ -682,7 +682,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
         this,
         tr("Restore Backup"),
         QDir::homePath(),
-        tr("Throne Backup (*.thrbackup)")
+        tr("TaliabuVPN Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 
@@ -700,7 +700,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
     char magic[4];
     if (stream.readRawData(magic, 4) != 4 || strncmp(magic, "THRN", 4) != 0) {
         QMessageBox::critical(this, tr("Restore Failed"),
-            tr("Not a valid Throne backup file."));
+            tr("Not a valid TaliabuVPN backup file."));
         return;
     }
 
@@ -762,7 +762,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
 
     auto* warn = new QLabel(
         tr("Each selected part replaces the current data. This cannot be undone.\n"
-           "Throne will restart to complete the restore."), &dlg);
+           "TaliabuVPN will restart to complete the restore."), &dlg);
     warn->setWordWrap(true);
     layout->addWidget(warn);
 
@@ -829,7 +829,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
     if (chosen.settings) Configs::dataManager->settingsRepo->noSave = true;
 
     QMessageBox::information(this, tr("Restore Complete"),
-        tr("Backup restored successfully. Throne will now restart for the changes to take effect."));
+        tr("Backup restored successfully. TaliabuVPN will now restart for the changes to take effect."));
     MW_dialog_message(MwMessage::RestartProgram, {});
     QDialog::reject();
 }

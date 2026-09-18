@@ -165,9 +165,9 @@ namespace Configs {
 
         // Remember
         bool remember_system_proxy = false;
-        bool remember_tun = false;
+        bool remember_tun = true;
         int remember_id = NoProfileId;
-        bool remember_enable = false;
+        bool remember_enable = true;
         bool windows_set_admin = false;
         QMap<QString, QKeySequence> shortcuts;
 
@@ -216,7 +216,7 @@ namespace Configs {
         bool adblock_enable = false;
 
         // VPN
-        bool fake_dns = false;
+        bool fake_dns = true;
         bool fakeip_disable_ipv6 = false;
         bool enable_tun_routing = false;
 #ifdef Q_OS_MACOS
