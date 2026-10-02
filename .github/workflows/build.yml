@@ -586,7 +586,7 @@ jobs:
           { printf '%s\n' 'Types: deb' \
               'URIs: https://throneproj.github.io/Throne/apt' \
               'Suites: stable' 'Components: main' 'Signed-By:'
-            sed 's/^$/./; s/^/ /' ../throne.asc; } > throne.sources
+            sed '/^$/d; s/^/ /' ../throne.asc; } > throne.sources
       - name: Upload Pages artifact
         uses: actions/upload-pages-artifact@v5.0.0
         with:
