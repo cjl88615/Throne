@@ -68,7 +68,6 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     ui->speedtest_mode->setCurrentIndex(Configs::dataManager->settingsRepo->speed_test_mode);
     ui->test_timeout->setText(Int2String(Configs::dataManager->settingsRepo->speed_test_timeout_ms));
     ui->simple_down_url->setText(Configs::dataManager->settingsRepo->simple_dl_url);
-    ui->allow_beta->setChecked(Configs::dataManager->settingsRepo->allow_beta_update);
     ui->disable_mixed_inbound->setChecked(Configs::dataManager->settingsRepo->disable_mixed_inbound);
     D_LOAD_BOOL(inbound_auth)
     D_LOAD_STRING(inbound_user)
@@ -393,7 +392,6 @@ void DialogBasicSettings::accept() {
     Configs::dataManager->settingsRepo->simple_dl_url = ui->simple_down_url->text().trimmed();
     Configs::dataManager->settingsRepo->url_test_timeout_ms = ui->url_timeout->text().trimmed().toInt();
     Configs::dataManager->settingsRepo->speed_test_timeout_ms = ui->test_timeout->text().trimmed().toInt();
-    Configs::dataManager->settingsRepo->allow_beta_update = ui->allow_beta->isChecked();
     Configs::dataManager->settingsRepo->disable_mixed_inbound = ui->disable_mixed_inbound->isChecked();
     Configs::dataManager->settingsRepo->reset_proxy_on_disable_sp = ui->reset_proxy_on_disable_sp->isChecked();
     D_SAVE_BOOL(inbound_auth)
@@ -605,8 +603,8 @@ void DialogBasicSettings::on_backup_create_clicked() {
     QString filePath = QFileDialog::getSaveFileName(
         this,
         tr("Create Backup"),
-        QDir::homePath() + "/Throne-backup.thrbackup",
-        tr("Throne Backup (*.thrbackup)")
+        QDir::homePath() + "/TaliabuVPN-backup.thrbackup",
+        tr("TaliabuVPN Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 
@@ -696,7 +694,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
         this,
         tr("Restore Backup"),
         QDir::homePath(),
-        tr("Throne Backup (*.thrbackup)")
+        tr("TaliabuVPN Backup (*.thrbackup)")
     );
     if (filePath.isEmpty()) return;
 
@@ -714,7 +712,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
     char magic[4];
     if (stream.readRawData(magic, 4) != 4 || strncmp(magic, "THRN", 4) != 0) {
         QMessageBox::critical(this, tr("Restore Failed"),
-            tr("Not a valid Throne backup file."));
+            tr("Not a valid TaliabuVPN backup file."));
         return;
     }
 
@@ -776,7 +774,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
 
     auto* warn = new QLabel(
         tr("Each selected part replaces the current data. This cannot be undone.\n"
-           "Throne will restart to complete the restore."), &dlg);
+           "TaliabuVPN will restart to complete the restore."), &dlg);
     warn->setWordWrap(true);
     layout->addWidget(warn);
 
@@ -843,9 +841,9 @@ void DialogBasicSettings::on_backup_restore_clicked() {
     // The exit path's settingsRepo->Save() would write the stale in-memory values back over the restore.
     if (chosen.settings) Configs::dataManager->settingsRepo->noSave = true;
 
-    QString done = tr("Backup restored successfully. Throne will now restart for the changes to take effect.");
+    QString done = tr("Backup restored successfully. TaliabuVPN will now restart for the changes to take effect.");
     if (skippedRules > 0)
-        done += "\n\n" + tr("Skipped %n routing rule(s) that use conditions this version of Throne does not support.", nullptr, skippedRules);
+        done += "\n\n" + tr("Skipped %n routing rule(s) that use conditions this version of TaliabuVPN does not support.", nullptr, skippedRules);
     QMessageBox::information(this, tr("Restore Complete"), done);
     MW_dialog_message(MwMessage::RestartProgram, {});
     QDialog::reject();
