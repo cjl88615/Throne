@@ -127,7 +127,6 @@ namespace Configs {
         int speed_test_mode = TestConfig::FULL;
         int speed_test_timeout_ms = 5000;
         QString simple_dl_url = "http://cachefly.cachefly.net/1mb.test";
-        bool allow_beta_update = false;
         bool show_system_dns = false;
         bool use_custom_icons = false;
         bool follow_status_in_taskbar = true;
@@ -170,9 +169,9 @@ namespace Configs {
 
         // Remember
         bool remember_system_proxy = false;
-        bool remember_tun = false;
+        bool remember_tun = true;
         int remember_id = NoProfileId;
-        bool remember_enable = false;
+        bool remember_enable = true;
         bool windows_set_admin = false;
         QMap<QString, QKeySequence> shortcuts;
 
@@ -221,7 +220,7 @@ namespace Configs {
         bool adblock_enable = false;
 
         // VPN
-        bool fake_dns = false;
+        bool fake_dns = true;
         bool fakeip_disable_ipv6 = false;
         bool enable_tun_routing = false;
 #ifdef Q_OS_MACOS
