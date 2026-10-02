@@ -60,6 +60,7 @@ namespace Configs {
 
 class TrayProfileSelector;
 class TrayOtpCodes;
+class GlobalHotkeys;
 class TestRunner;
 class DialogVpnAuth;
 struct VpnAuthChallenge;
@@ -119,6 +120,8 @@ public:
 
     void refresh_groups();
 
+    void updateTabToolTip(int gid);
+
     void refresh_status(const QString &traffic_update = "");
 
     void update_traffic_graph(int proxyDl, int proxyUp, int directDl, int directUp);
@@ -139,7 +142,10 @@ public:
 
     void start_select_mode(QObject *context, const std::function<void(int)> &callback);
 
-    void RegisterHotkey(bool unregister);
+    // Returns a line per global hotkey that could not be registered.
+    QStringList RegisterHotkey(bool unregister);
+
+    bool IsGlobalHotkeySupported() const;
 
     bool StopVPNProcess();
 
@@ -278,7 +284,7 @@ private:
     class ConnectionsTreeFilterProxyModel *connectionsFilterModel = nullptr;
     class ConnectionsFilterHeader *connectionFilterHeader = nullptr;
     QHash<QString, bool> m_processExpanded; // per-process choices; the rest follow m_processesExpandedByDefault
-    bool m_processesExpandedByDefault = true;
+    bool m_processesExpandedByDefault = false;
     QTimer *connectionFilterDebounce = nullptr;
     QToolButton *connectionExpandButton = nullptr;
     QToolButton *connectionCloseAllButton = nullptr;
@@ -292,6 +298,7 @@ private:
     DataViewHtmlGenerator dataViewHtmlGenerator_;
 
     QList<QShortcut*> hiddenMenuShortcuts;
+    GlobalHotkeys *globalHotkeys = nullptr;
 
     QString addressFilterString;
     QString nameFilterString;
@@ -345,7 +352,8 @@ private:
 
     QList<int> get_selected_or_group();
 
-    void set_system_proxy(bool enable);
+    // Queued on one worker thread in call order; wait blocks until this change has run.
+    void set_system_proxy(bool enable, bool wait = false);
 
     void saveProfileFocusState();
 
@@ -413,7 +421,7 @@ private:
 
     bool m_adjustingColumns = false;
 
-    void HotkeyEvent(const QString &key);
+    void HotkeyEvent(const QString &id);
 
     void RegisterHiddenMenuShortcuts(bool unregister = false);
     void registerMenuShortcuts(QMenu *menu, QSet<QKeySequence> &claimed);
@@ -489,6 +497,8 @@ private:
 
     bool set_system_dns(bool set, bool save_set = true);
 
+    void showHijackDeprecationNotice();
+
     void OpenDashboard();
 
     void SeedDashboard();
@@ -501,7 +511,10 @@ private:
 
     QString routeRuleAppendBlocker() const;
 
-    bool addRuleToCurrentRoute(const QString &rawRule, Configs::simpleAction action);
+    enum class RuleToggle { Failed, Added, Moved, Removed };
+
+    // Adds rawRule to the action's simple rules of the current profile, or takes it out when it is already there.
+    RuleToggle toggleRuleInCurrentRoute(const QString &rawRule, Configs::simpleAction action);
 
     void setupConnectionFilter();
 

@@ -64,9 +64,6 @@ Name: "{autodesktop}\TaliabuVPN"; Filename: "{app}\TaliabuVPN.exe"
 [Registry]
 Root: HKA; Subkey: "Software\TaliabuVPN"; ValueType: string; ValueName: "InstallPath"; ValueData: "{app}"; Flags: uninsdeletekey
 
-[UninstallDelete]
-Type: files; Name: "{app}\updater.old"
-
 [Run]
 Filename: "{app}\TaliabuVPN.exe"; Description: "{cm:LaunchProgram,TaliabuVPN}"; Flags: postinstall nowait skipifsilent
 

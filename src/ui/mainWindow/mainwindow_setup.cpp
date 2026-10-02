@@ -197,8 +197,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     runOnNewThread([=, this] {GetDeviceDetails(); });
 
-    auto core_path = QApplication::applicationDirPath() + "/";
-    core_path += "ThroneCore";
+    auto core_path = Configs::FindCoreRealPath();
 
     bool coreDebugMode = (Configs::dataManager->settingsRepo->log_level == "debug");
 
@@ -261,6 +260,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     parallelCoreCallPool->setMaxThreadCount(10);
     testRunner = std::make_unique<TestRunner>(this);
+    Subscription::updater()->SetUrlTester([this](const QList<int> &profileIDs, const Subscription::GroupUpdater::Finish &done) {
+        testRunner->queueUrlTests(profileIDs, done);
+    });
     ui->menu_start->setShortcuts({QKeySequence(Qt::Key_Return), QKeySequence(Qt::Key_Enter)});
     connect(ui->menu_start, &QAction::triggered, this, [=,this]() { profile_start(); });
     connect(ui->menu_stop, &QAction::triggered, this, [=,this]() { profile_stop(false, false, true); });
@@ -473,8 +475,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         int columnIndex = header->logicalIndexAt(pos);
         auto group = Configs::dataManager->groupsRepo->CurrentGroup();
         if (group == nullptr) return;
-        if (columnIndex == ProfilesTableModel::ColType) {
-            if (!Configs::dataManager->settingsRepo->show_config_security) return;
+        // The column-widths action carries its shortcut id as data, so it must never be read as a sort key.
+        auto execWithResetWidths = [&](QMenu& menu) -> QAction* {
+            if (!menu.isEmpty()) menu.addSeparator();
+            menu.addAction(ui->actionRefresh_Column_Widths);
+            auto* chosen = menu.exec(header->mapToGlobal(pos));
+            return chosen == ui->actionRefresh_Column_Widths ? nullptr : chosen;
+        };
+        if (columnIndex == ProfilesTableModel::ColType && Configs::dataManager->settingsRepo->show_config_security) {
             QMenu menu(this);
             auto* sortByLabel = menu.addAction(tr("Sort By:"));
             sortByLabel->setEnabled(false);
@@ -491,7 +499,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 act->setChecked(group->type_sort_by == opt.value);
             }
 
-            auto* chosen = menu.exec(header->mapToGlobal(pos));
+            auto* chosen = execWithResetWidths(menu);
             if (chosen == nullptr || !chosen->data().isValid()) return;
 
             group->type_sort_by = static_cast<Configs::typeBy>(chosen->data().toInt());
@@ -566,7 +574,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 act->setChecked(static_cast<int>(group->test_sort_by) == opt.value);
             }
 
-            auto* chosen = menu.exec(header->mapToGlobal(pos));
+            auto* chosen = execWithResetWidths(menu);
             if (chosen == nullptr || !chosen->data().isValid()) return;
 
             int testSortBy = chosen->data().toInt();
@@ -610,7 +618,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 act->setChecked(static_cast<int>(group->traffic_sort_by) == opt.value);
             }
 
-            auto* chosen = menu.exec(header->mapToGlobal(pos));
+            auto* chosen = execWithResetWidths(menu);
             if (chosen == nullptr || !chosen->data().isValid()) return;
 
             int trafficSortBy = chosen->data().toInt();
@@ -635,6 +643,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
                 });
             return;
         }
+        QMenu menu(this);
+        execWithResetWidths(menu);
     });
     ui->profilesTableView->verticalHeader()->setStretchLastSection(false);
     ui->profilesTableView->verticalHeader()->setDefaultSectionSize(24);
@@ -682,6 +692,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
     });
     connect(filterHeader, &ProfilesTableFilterHeader::focusTableRequested, this,
             [this](bool selectFirst) { focusProfilesTable(selectFirst); });
+
+    connect(Subscription::updater(), &Subscription::GroupUpdater::asyncUpdateCallback, this, [this](int gid) {
+        if (gid >= 0) updateTabToolTip(gid);
+    });
 
     this->refresh_groups();
 
@@ -748,8 +762,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         Configs::dataManager->settingsRepo->Save();
     });
     connect(ui->actionStart_with_system, &QAction::triggered, this, [=,this](bool checked) {
-        AutoRun_SetEnabled(checked);
-        ui->actionStart_with_system->setChecked(checked);
+        if (QString error; !AutoRun_SetEnabled(checked, &error)) {
+            MessageBoxWarning(tr("Start with system"), tr("Could not update the autostart entry:") + "\n" + error);
+        }
+        ui->actionStart_with_system->setChecked(AutoRun_IsEnabled());
     });
     connect(ui->actionAllow_LAN, &QAction::triggered, this, [=,this](bool checked) {
         Configs::dataManager->settingsRepo->inbound_address = checked ? "::" : "127.0.0.1";
@@ -860,6 +876,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     connect(ui->actionRefresh_Column_Widths, &QAction::triggered, this, [=, this] {
         auto ent = Configs::dataManager->groupsRepo->CurrentGroup();
+        if (ent == nullptr) return;
         ent->column_width.clear();
         Configs::dataManager->groupsRepo->Save(ent);
         show_group(ent->id);
@@ -1089,15 +1106,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
         auto* runner = Throne::PeriodicRunner::instance();
         // Interval is sign-encoded in settings (negative = disabled); < 30 min counts as off.
         const auto minutesOf = [](int v) { return v >= 30 ? v : 0; };
+        // Every poll while enabled: each group keeps its own schedule, persisted as its sub_last_update.
         runner->Add({
-            tr("subscriptions"),
-            [minutesOf] { return minutesOf(Configs::dataManager->settingsRepo->sub_auto_update); },
-            [] { return Configs::dataManager->settingsRepo->sub_auto_update_last; },
-            [](qint64 t) {
-                Configs::dataManager->settingsRepo->sub_auto_update_last = t;
-                Configs::dataManager->settingsRepo->Save();
-            },
-            [] { Subscription::updater()->RefreshAll(true); },
+            {},
+            [minutesOf] { return minutesOf(Configs::dataManager->settingsRepo->sub_auto_update) > 0 ? 1 : 0; },
+            nullptr,
+            nullptr,
+            [] { Subscription::updater()->CheckAutoUpdate(); },
         });
         runner->Add({
             tr("routing profiles"),
@@ -1113,6 +1128,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 
     if (!Configs::dataManager->settingsRepo->flag_tray) show();
     else if (tray->isVisible()) HideWindow(this);
+    // Deferred: GetMessageBoxParent() falls back to the mainwindow global, which is only set once this constructor returns.
+    QTimer::singleShot(0, this, &MainWindow::showHijackDeprecationNotice);
 
     ui->data_view->setStyleSheet("background: transparent; border: none;");
 
@@ -1131,6 +1148,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), ui(new Ui::MainWi
 }
 
 MainWindow::~MainWindow() {
+    Subscription::updater()->SetUrlTester(nullptr);
     delete ui;
 }
 

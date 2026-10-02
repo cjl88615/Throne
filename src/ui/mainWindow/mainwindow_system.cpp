@@ -1,22 +1,22 @@
 #include "include/ui/mainwindow.h"
-#include "NkrVersion.h"
 
 #include <QApplication>
 #include <QDesktopServices>
 #include <QDir>
 #include <QDirIterator>
 #include <QFile>
-#include <QJsonArray>
-#include <QJsonObject>
 #include <QMessageBox>
+#include <QThread>
 
-#include "3rdparty/qv2ray/v2/proxy/QvProxyConfigurator.hpp"
 #include "include/api/RPC.h"
 #include "include/configs/generate.h"
+#include "include/database/MarkersRepo.h"
 #include "include/global/Configs.hpp"
 #include "include/global/HTTPRequestHelper.hpp"
+#include "include/global/LocalNetwork.hpp"
 #include "include/global/Logger.hpp"
 #include "include/sys/Process.hpp"
+#include "include/sys/SystemProxy.hpp"
 #include "include/ui/mainWindow/MainWindowInternal.h"
 
 #include "include/ui/group/dialog_manage_groups.h"
@@ -29,7 +29,6 @@
 
 #ifdef Q_OS_WIN
 #include "3rdparty/WinCommander.hpp"
-#include "include/sys/windows/WinVersion.h"
 #endif
 #ifdef Q_OS_LINUX
 #include "include/sys/linux/LinuxCap.h"
@@ -66,6 +65,29 @@ void MainWindow::on_menu_routing_settings_triggered() {
         dialog_is_using = false;
     });
     dialog->show();
+}
+
+void MainWindow::showHijackDeprecationNotice() {
+    const auto &settings = Configs::dataManager->settingsRepo;
+    if (!settings->enable_dns_server && !settings->enable_redirect) return;
+    if (Configs::dataManager->markersRepo->IsMarked(Configs::Markers::HijackDeprecated)) return;
+
+    auto text = tr("Hijack (Preferences > Routing Settings > Hijack) is deprecated and will be removed in the next release.");
+#ifdef Q_OS_WIN
+    text += " " + tr("The System DNS option depends on it and will be removed along with it.");
+#endif
+    text += "\n\n" + tr("Tun mode covers the same use case.");
+
+    auto *box = new QMessageBox(QMessageBox::Warning, tr("Hijack is deprecated"), text, QMessageBox::Ok, GetMessageBoxParent());
+    const auto *dontShowAgain = box->addButton(tr("Don't show again"), QMessageBox::ActionRole);
+    // An ActionRole button leaves no auto-detected escape button, which disables Esc and the title-bar close.
+    box->setEscapeButton(QMessageBox::Ok);
+    box->setAttribute(Qt::WA_DeleteOnClose);
+    box->setWindowModality(Qt::NonModal);
+    connect(box, &QMessageBox::buttonClicked, this, [dontShowAgain](const QAbstractButton *button) {
+        if (button == dontShowAgain) Configs::dataManager->markersRepo->Mark(Configs::Markers::HijackDeprecated);
+    });
+    box->show();
 }
 
 void MainWindow::on_menu_vpn_settings_triggered() {
@@ -125,7 +147,8 @@ void MainWindow::prepare_exit()
     }
     Configs::dataManager->settingsRepo->prepare_exit = true;
     LOG_INFO("prepare_exit started, tearing down proxy/tun/core");
-    if (Configs::dataManager->settingsRepo->spmode_system_proxy) set_system_proxy(false);
+    // Unconditional: an uncheck may still have its clear queued.
+    set_system_proxy(false, true);
     if (Configs::dataManager->settingsRepo->system_dns_set) set_system_dns(false, false);
     RegisterHiddenMenuShortcuts(true);
     RegisterHotkey(true);
@@ -189,6 +212,10 @@ bool MainWindow::get_elevated_permissions(ExitReason reason) {
         return true;
     }
     if (Configs::IsAdmin()) return true;
+#ifdef NKR_ELEVATION_HINT
+    MessageBoxWarning(software_name, tr("This installation cannot grant the core privileges by itself.") + "\n\n" + NKR_ELEVATION_HINT);
+    return false;
+#endif
 #ifdef Q_OS_LINUX
     if (!Linux_HavePkexec()) {
         MessageBoxWarning(software_name, "Please install \"pkexec\" first.");
@@ -215,7 +242,7 @@ bool MainWindow::get_elevated_permissions(ExitReason reason) {
     }
 #endif
 #ifdef Q_OS_WIN
-    auto n = QMessageBox::warning(GetMessageBoxParent(), software_name, tr("Please run Throne as admin"), QMessageBox::Yes | QMessageBox::No);
+    auto n = QMessageBox::warning(GetMessageBoxParent(), software_name, tr("Please run TaliabuVPN as admin"), QMessageBox::Yes | QMessageBox::No);
     if (n == QMessageBox::Yes) {
         this->exit_reason = reason;
         on_menu_exit_triggered();
@@ -245,13 +272,33 @@ bool MainWindow::get_elevated_permissions(ExitReason reason) {
     return false;
 }
 
-void MainWindow::set_system_proxy(bool enable) {
-    if (enable) {
-        auto socks_port = Configs::dataManager->settingsRepo->inbound_socks_port;
-        SetSystemProxy(socks_port, socks_port, Configs::dataManager->settingsRepo->proxy_scheme);
-    } else {
-        ClearSystemProxy();
+namespace {
+    // networksetup and gsettings runs are slow, and profile start/stop call in from their own threads.
+    QThread *systemProxyThread() {
+        static auto *thread = [] {
+            auto *t = new QThread;
+            t->start();
+            return t;
+        }();
+        return thread;
     }
+}
+
+void MainWindow::set_system_proxy(bool enable, bool wait) {
+    const auto &settings = Configs::dataManager->settingsRepo;
+    const auto host = LocalNetwork::InboundConnectHost();
+    const auto port = settings->inbound_socks_port;
+    const auto format = settings->proxy_scheme;
+    runOnThread([=] {
+        QString error;
+        if (!enable) {
+            error = SystemProxy_Clear();
+        } else if (Configs::dataManager->settingsRepo->spmode_system_proxy) {
+            // Rechecked: a profile start can queue this after the box was unchecked.
+            error = SystemProxy_Apply(host, port, format);
+        }
+        if (!error.isEmpty()) MW_show_log(tr("System proxy: %1").arg(error));
+    }, systemProxyThread(), wait);
 }
 
 void MainWindow::set_spmode_system_proxy(bool enable, bool save) {
@@ -321,73 +368,6 @@ void MainWindow::RestartCore() {
 }
 
 namespace {
-
-bool isNewer(QString assetName) {
-    if (QString(NKR_VERSION).isEmpty()) return false;
-    assetName = assetName.mid(7); // take out Throne-
-    QString version;
-    auto spl = assetName.split('-');
-    version += spl[0];
-    if (spl[1].contains("beta") || spl[1].contains("alpha") || spl[1].contains("rc")) version += "."+spl[1];
-    auto parts = version.split("."); // [1,2,3,beta,13]
-    auto currentParts = QString(NKR_VERSION).replace("-", ".").split('.');
-    if (parts.size() < 3 || currentParts.size() < 3)
-    {
-        MW_show_log("Version strings seem to be invalid" + QString(NKR_VERSION) + " and " + version);
-        return false;
-    }
-    std::vector<int> verNums;
-    std::vector<int> currNums;
-    verNums.push_back(parts[0].toInt());
-    verNums.push_back(parts[1].toInt());
-    verNums.push_back(parts[2].toInt());
-    if (parts.size() > 3)
-    {
-        if (parts[3] == "alpha") verNums.push_back(1);
-        if (parts[3] == "beta") verNums.push_back(2);
-        if (parts[3] == "rc") verNums.push_back(3);
-        if (parts.size() > 4) verNums.push_back(parts[4].toInt());
-    }
-
-    currNums.push_back(currentParts[0].toInt());
-    currNums.push_back(currentParts[1].toInt());
-    currNums.push_back(currentParts[2].toInt());
-    if (currentParts.size() > 3)
-    {
-        if (currentParts[3] == "alpha") currNums.push_back(1);
-        if (currentParts[3] == "beta") currNums.push_back(2);
-        if (currentParts[3] == "rc") currNums.push_back(3);
-        if (currentParts.size() > 4) currNums.push_back(currentParts[4].toInt());
-    }
-
-    if (verNums.size() < 3 || currNums.size() < 3)
-    {
-        MW_show_log("Version strings seem to be invalid" + QString(NKR_VERSION) + " and " + version);
-        return false;
-    }
-
-    for (int i=0;i<3;i++)
-    {
-        if (verNums[i] > currNums[i]) return true;
-        if (verNums[i] < currNums[i]) return false;
-    }
-
-    if (verNums.size() == 5 && currNums.size() == 3) return false;
-    if (verNums.size() == 3 && currNums.size() == 5) return true;
-    if (verNums.size() == 5 && currNums.size() == 5)
-    {
-        for (int i=3;i<5;i++)
-        {
-            if (verNums[i] > currNums[i]) return true;
-            if (verNums[i] < currNums[i]) return false;
-        }
-    } else
-    {
-		MW_show_log("There are no updates. You have the latest version - " + QString(NKR_VERSION));
-        return false;
-    }
-    return false;
-}
 
 constexpr auto dashboardDownloadURL = "https://github.com/SagerNet/sing-box-dashboard/archive/refs/heads/gh-pages.zip";
 
@@ -490,4 +470,3 @@ void MainWindow::OpenDashboard() {
         });
     });
 }
-

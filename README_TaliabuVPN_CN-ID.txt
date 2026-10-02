@@ -1,5 +1,6 @@
 TaliabuVPN 绿色版使用说明 / Panduan TaliabuVPN Portable
 ====================================================
+版本 / Versi: 20261002
 
 【中文】
 

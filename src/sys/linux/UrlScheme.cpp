@@ -21,9 +21,13 @@ static const QStringList &typesOf(Association a) {
 
 // AppImage: point at the outer image ($APPIMAGE), not the extracted binary, which disappears after exit.
 static QString execTarget() {
+#ifdef NKR_DESKTOP_EXEC
+    return QStringLiteral(NKR_DESKTOP_EXEC);
+#else
     auto env = QProcessEnvironment::systemEnvironment();
     if (env.contains("APPIMAGE")) return env.value("APPIMAGE");
     return QApplication::applicationFilePath();
+#endif
 }
 
 static QString execLine() {
@@ -103,8 +107,22 @@ QString UrlScheme_DesiredState(Association a) {
     return (a == Association::Links ? "v4|" : "v1|") + execTarget();
 }
 
+// The deb, the rpm and install_linux.py each install a Throne.desktop that launches this binary; a zip copy has none pointing at itself.
 bool UrlScheme_AutoRegisterByDefault() {
+#ifdef NKR_DESKTOP_EXEC
     return true;
+#else
+    const QString target = execTarget();
+    for (const QString &path : QStandardPaths::locateAll(QStandardPaths::ApplicationsLocation, "Throne.desktop")) {
+        QFile f(path);
+        if (!f.open(QIODevice::ReadOnly | QIODevice::Text)) continue;
+        while (!f.atEnd()) {
+            const QString line = QString::fromUtf8(f.readLine()).trimmed();
+            if (line.startsWith("Exec=") && line.contains(target)) return true;
+        }
+    }
+    return false;
+#endif
 }
 
 bool UrlScheme_IsCurrent(Association a) {

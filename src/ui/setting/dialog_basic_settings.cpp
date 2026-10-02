@@ -8,6 +8,7 @@
 #include "include/global/Configs.hpp"
 #include "include/global/HTTPRequestHelper.hpp"
 #include "include/global/DeviceDetailsHelper.hpp"
+#include "include/database/entities/Group.h"
 
 #include <QStyleFactory>
 #include <QFileDialog>
@@ -34,6 +35,10 @@
 #include <QDialogButtonBox>
 #include <QLabel>
 #include <QPushButton>
+#include <QSslSocket>
+#include <QStandardItemModel>
+
+#include <algorithm>
 
 #include "include/sys/UrlScheme.hpp"
 #include "include/ui/mainwindow.h"
@@ -63,7 +68,6 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     ui->speedtest_mode->setCurrentIndex(Configs::dataManager->settingsRepo->speed_test_mode);
     ui->test_timeout->setText(Int2String(Configs::dataManager->settingsRepo->speed_test_timeout_ms));
     ui->simple_down_url->setText(Configs::dataManager->settingsRepo->simple_dl_url);
-    ui->allow_beta->setChecked(Configs::dataManager->settingsRepo->allow_beta_update);
     ui->disable_mixed_inbound->setChecked(Configs::dataManager->settingsRepo->disable_mixed_inbound);
     D_LOAD_BOOL(inbound_auth)
     D_LOAD_STRING(inbound_user)
@@ -224,6 +228,11 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
 
     ui->user_agent->setText(Configs::dataManager->settingsRepo->user_agent);
     ui->user_agent->setPlaceholderText(Configs::dataManager->settingsRepo->GetUserAgent(true));
+    ui->sub_tls_version->setCurrentIndex(std::clamp(Configs::dataManager->settingsRepo->sub_tls_version, 0, ui->sub_tls_version->count() - 1));
+    ui->sub_http_version->setCurrentIndex(std::clamp(Configs::dataManager->settingsRepo->sub_http_version, 0, ui->sub_http_version->count() - 1));
+    if (auto *model = qobject_cast<QStandardItemModel *>(ui->sub_tls_version->model()); model && !QSslSocket::isProtocolSupported(QSsl::TlsV1_3)) {
+        model->item(static_cast<int>(Configs::subTlsVersion::tls13))->setEnabled(false);
+    }
     D_LOAD_BOOL(net_use_proxy)
     D_LOAD_BOOL(allow_stopping_active_profile)
     D_LOAD_BOOL(sub_clear)
@@ -232,6 +241,7 @@ DialogBasicSettings::DialogBasicSettings(QWidget *parent)
     D_LOAD_BOOL(sub_send_hwid)
     D_LOAD_STRING(sub_custom_hwid_params)
     D_LOAD_INT_ENABLE(sub_auto_update, sub_auto_update_enable)
+    D_LOAD_BOOL(sub_respect_server_interval)
     D_LOAD_INT_ENABLE(route_auto_update, route_auto_update_enable)
     auto details = GetDeviceDetails();
 	ui->sub_send_hwid->setToolTip(
@@ -382,7 +392,6 @@ void DialogBasicSettings::accept() {
     Configs::dataManager->settingsRepo->simple_dl_url = ui->simple_down_url->text().trimmed();
     Configs::dataManager->settingsRepo->url_test_timeout_ms = ui->url_timeout->text().trimmed().toInt();
     Configs::dataManager->settingsRepo->speed_test_timeout_ms = ui->test_timeout->text().trimmed().toInt();
-    Configs::dataManager->settingsRepo->allow_beta_update = ui->allow_beta->isChecked();
     Configs::dataManager->settingsRepo->disable_mixed_inbound = ui->disable_mixed_inbound->isChecked();
     Configs::dataManager->settingsRepo->reset_proxy_on_disable_sp = ui->reset_proxy_on_disable_sp->isChecked();
     D_SAVE_BOOL(inbound_auth)
@@ -440,6 +449,8 @@ void DialogBasicSettings::accept() {
     // The PeriodicRunner reads these intervals live; no timer needs restarting.
 
     Configs::dataManager->settingsRepo->user_agent = ui->user_agent->text().trimmed();
+    Configs::dataManager->settingsRepo->sub_tls_version = ui->sub_tls_version->currentIndex();
+    Configs::dataManager->settingsRepo->sub_http_version = ui->sub_http_version->currentIndex();
     D_SAVE_BOOL(net_use_proxy)
     D_SAVE_BOOL(allow_stopping_active_profile)
     D_SAVE_BOOL(sub_clear)
@@ -448,6 +459,7 @@ void DialogBasicSettings::accept() {
     D_SAVE_BOOL(sub_send_hwid)
     D_SAVE_STRING(sub_custom_hwid_params)
     D_SAVE_INT_ENABLE(sub_auto_update, sub_auto_update_enable)
+    D_SAVE_BOOL(sub_respect_server_interval)
     D_SAVE_INT_ENABLE(route_auto_update, route_auto_update_enable)
 
     Configs::dataManager->settingsRepo->disable_traffic_stats = ui->disable_stats->isChecked();
@@ -787,6 +799,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
         return;
     }
 
+    int skippedRules = 0;
     if (chosen.anyDb()) {
         QString tempDbPath = QDir::temp().filePath("Thr_restore_tmp.db");
         QFile::remove(tempDbPath);
@@ -800,7 +813,7 @@ void DialogBasicSettings::on_backup_restore_clicked() {
         tempDbFile.close();
 
         try {
-            Configs::dataManager->getDatabase().restoreSelective(tempDbPath.toStdString(), chosen);
+            skippedRules = Configs::dataManager->getDatabase().restoreSelective(tempDbPath.toStdString(), chosen);
         } catch (std::exception& e) {
             QFile::remove(tempDbPath);
             QMessageBox::critical(this, tr("Restore Failed"),
@@ -828,8 +841,10 @@ void DialogBasicSettings::on_backup_restore_clicked() {
     // The exit path's settingsRepo->Save() would write the stale in-memory values back over the restore.
     if (chosen.settings) Configs::dataManager->settingsRepo->noSave = true;
 
-    QMessageBox::information(this, tr("Restore Complete"),
-        tr("Backup restored successfully. TaliabuVPN will now restart for the changes to take effect."));
+    QString done = tr("Backup restored successfully. TaliabuVPN will now restart for the changes to take effect.");
+    if (skippedRules > 0)
+        done += "\n\n" + tr("Skipped %n routing rule(s) that use conditions this version of TaliabuVPN does not support.", nullptr, skippedRules);
+    QMessageBox::information(this, tr("Restore Complete"), done);
     MW_dialog_message(MwMessage::RestartProgram, {});
     QDialog::reject();
 }
