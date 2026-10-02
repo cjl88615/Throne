@@ -59,7 +59,6 @@ namespace Configs {
             {"disable_privilege_req",         &disable_privilege_req},
             {"enable_tun_routing",            &enable_tun_routing},
             {"use_mozilla_certs",             &use_mozilla_certs},
-            {"allow_beta_update",             &allow_beta_update},
             {"adblock_enable",                &adblock_enable},
             {"show_system_dns",               &show_system_dns},
             {"use_custom_icons",              &use_custom_icons},
@@ -353,9 +352,9 @@ namespace Configs {
         if (user_agent.isEmpty() || isDefault) {
             const QStringView version = SubStrBefore(QStringLiteral(NKR_VERSION), u"-");
             if (version.contains(u'.')) {
-                return QStringLiteral("Throne/") + version.toString();
+                return QStringLiteral("TaliabuVPN/") + version.toString();
             }
-            return QStringLiteral("Throne/1.0.0");
+            return QStringLiteral("TaliabuVPN/1.0.0");
         }
         return user_agent;
     }
