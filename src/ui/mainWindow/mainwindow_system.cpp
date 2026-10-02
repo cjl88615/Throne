@@ -470,4 +470,3 @@ void MainWindow::OpenDashboard() {
         });
     });
 }
-
